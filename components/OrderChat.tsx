@@ -54,7 +54,7 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
       if (tick % 3 === 0) { 
         analyserRef.current!.getByteFrequencyData(buffer);
         let sum = 0;
-        const range = Math.floor(buffer.length / 2); 
+        const range = Math.floor(buffer.length / 2);
         for (let i = 0; i < range; i++) sum += buffer[i];
         const avg = sum / range;
         volumeHistory.current.push(avg);
@@ -64,7 +64,7 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
       ctx.fillStyle = '#374151';
       const history = volumeHistory.current;
       for (let i = 0; i < history.length; i++) {
-        const val = history[history.length - 1 - i] || 0; 
+        const val = history[history.length - 1 - i] || 0;
         let h = (val / 255) * rect.height * 1.5;
         h = Math.max(2, Math.min(h, rect.height));
         const x = rect.width - (i * (barWidth + gap)) - barWidth;
@@ -79,14 +79,14 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
     render();
     return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); };
   }, [isRecording]);
-// ----------------------------------------------------------------------------------------------------
-  // --- GESTIONE REGISTRAZIONE ---
+  // ----------------------------------------------------------------------------------------------------
 
+  // --- GESTIONE REGISTRAZIONE ---
   const startRecording = async () => {
     if (!selectedClient) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
+
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
@@ -96,17 +96,17 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
 
       const recorder = new MediaRecorder(stream);
       volumeHistory.current = [];
-      
-      recorder.onstop = () => { 
-        ctx.close(); 
-        stream.getTracks().forEach(t => t.stop()); 
+
+      recorder.onstop = () => {
+        ctx.close();
+        stream.getTracks().forEach(t => t.stop());
       };
-      
+
       mediaRecorder.current = recorder;
       recorder.start();
       setIsRecording(true);
-    } catch (e) { 
-      alert("Impossibile accedere al microfono"); 
+    } catch (e) {
+      alert("Impossibile accedere al microfono");
     }
   };
 
@@ -114,7 +114,7 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
     if (!mediaRecorder.current) return;
     mediaRecorder.current.stop();
     setIsRecording(false);
-    
+
     if (save) {
       // Qui invieremo l'audio all'AI, per ora simuliamo un messaggio utente generico
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: "🎙️ (Messaggio Vocale)" }]);
@@ -128,8 +128,8 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
   };
 
   return (
-    <div className={`flex flex-col h-full w-full bg-white shadow-2xl rounded-[32px] overflow-hidden border border-gray-100 ring-1 ring-gray-900/5 transition-opacity duration-300 ${!selectedClient ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-      
+    <div className={`flex flex-col h-full w-full bg-white overflow-hidden transition-opacity duration-300 ${!selectedClient ? 'opacity-50 pointer-events-none' : 'opacity-100'}`} >
+
       {/* AREA MESSAGGI */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50 custom-scrollbar">
         {!selectedClient ? (
@@ -139,10 +139,9 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
         ) : (
           messages.map((m) => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] px-5 py-3 rounded-2xl text-[15px] shadow-sm animate-in zoom-in-95 duration-200 ${
-                  m.role === 'user' 
-                    ? 'bg-blue-600 text-white rounded-br-none' 
-                    : 'bg-white text-gray-800 border border-gray-100 rounded-bl-none'
+              <div className={`max-w-[85%] px-5 py-3 rounded-2xl text-[15px] shadow-sm animate-in zoom-in-95 duration-200 ${m.role === 'user'
+                  ? 'bg-blue-600 text-white rounded-br-none'
+                  : 'bg-white text-gray-800 border border-gray-100 rounded-bl-none'
                 }`}>
                 {m.content}
               </div>
@@ -155,11 +154,9 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
       {/* AREA INPUT */}
       <div className="p-4 bg-white border-t border-gray-100">
         {isRecording ? (
-          // MODALITÀ REGISTRAZIONE (Canvas Ondina)
           <div className="h-14 bg-gray-50 rounded-full border border-gray-200 flex items-center px-2 animate-in fade-in duration-200">
             <div className="flex-1 h-full overflow-hidden flex items-center pl-4">
-               {/* Il famoso Canvas copiato :) */}
-               <canvas ref={canvasRef} className="w-full h-8" />
+              <canvas ref={canvasRef} className="w-full h-8" />
             </div>
             <div className="flex gap-1 pr-2">
               <button onClick={() => stopRecording(false)} className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-gray-200 rounded-full transition-colors">✕</button>
@@ -167,7 +164,6 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
             </div>
           </div>
         ) : (
-          // MODALITÀ TESTO
           <div className="flex gap-2 h-14">
             <input
               type="text"
@@ -175,20 +171,20 @@ export default function OrderChat({ selectedClient }: { selectedClient: any }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder={selectedClient ? "Scrivi o registra..." : "Seleziona cliente..."}
+              placeholder={selectedClient ? "Scrivi o registra il tuo ordine..." : "Seleziona cliente..."}
               className="flex-1 bg-gray-50 rounded-full px-6 text-[15px] outline-none focus:bg-white transition-all text-gray-900 border border-transparent focus:border-blue-200 disabled:cursor-not-allowed"
             />
-            <button 
+            <button
               onClick={input.trim() ? handleSend : startRecording}
               disabled={!selectedClient && !input.trim()}
               className={`w-14 rounded-full shadow-md flex items-center justify-center transition-all active:scale-95 ${input.trim() ? 'bg-blue-600 text-white' : 'bg-black text-white'} disabled:bg-gray-200`}
             >
               {input.trim() ? (
                 // Icona Invio
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
               ) : (
                 // Icona Microfono
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>
               )}
             </button>
           </div>

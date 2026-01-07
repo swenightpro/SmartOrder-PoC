@@ -81,7 +81,7 @@ export default function ClientSelector({ onClientChange }: ClientSelectorProps) 
             type="text"
             value={query}
             onChange={handleInputChange}
-            placeholder="Cerca per nome o codice..."
+            placeholder="Cerca per nome o codice (es: 70)..."
             className={`w-full p-3 border-2 rounded-2xl outline-none text-sm transition-all ${
               selected 
                 ? 'border-green-500 bg-green-50 font-bold text-green-900' 
