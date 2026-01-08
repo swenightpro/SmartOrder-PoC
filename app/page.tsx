@@ -107,20 +107,30 @@ export default function Home() {
           )}
         </div>
 
+        {/* CLIENT SELECTOR OVERLAY */}
         {showClientSelector && (
           <>
-            <div
+            <div 
               className="fixed inset-0 bg-black/20 z-[100] animate-in fade-in duration-200"
               onClick={() => setShowClientSelector(false)}
             />
-            <div className="absolute top-0 left-0 right-0 bg-white shadow-2xl z-[101] animate-in slide-in-from-top duration-200 border-b-2 border-gray-200">
+            
+            <div className="absolute top-0 left-0 right-0 z-[101] animate-in slide-in-from-top duration-200">
               <button
                 onClick={() => setShowClientSelector(false)}
-                className="absolute top-5 right-4 z-[102] p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="absolute top-5 right-2 z-[102] p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                ✕
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               </button>
-              <ClientSelector currentClient={selectedClient} onClientChange={handleClientChange} />
+              
+              <ClientSelector 
+                currentClient={selectedClient}
+                onClientChange={handleClientChange}
+                isOverlay={true}
+              />
             </div>
           </>
         )}

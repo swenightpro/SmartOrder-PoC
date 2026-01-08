@@ -151,16 +151,19 @@ export default function OrderCanvas({ currentClient, onClose, onOrderSuccess, is
 
   // --- RENDER ---
 
-  // Layout Mobile
+// Layout Mobile
   if (isMobile) {
     return (
       <div className="h-full bg-white flex flex-col overflow-hidden relative">
         <div className="flex-1 flex gap-1 p-1 overflow-hidden">
+          
           {/* SINISTRA: RICERCA E AGGIUNTA */}
           <div className="w-1/2 flex flex-col gap-1 overflow-hidden border-r border-gray-200 pr-1 relative">
-            <div className="shrink-0 px-1">
+            
+            <div className="shrink-0 px-1 h-6 flex items-center">
               <span className="text-[8px] font-bold text-gray-400 uppercase">Aggiungi Articolo</span>
             </div>
+
             <div className="shrink-0 relative">
               <input
                 type="text"
@@ -178,7 +181,6 @@ export default function OrderCanvas({ currentClient, onClose, onOrderSuccess, is
                 className="w-full p-2 border border-gray-200 rounded-lg outline-none text-[11px] focus:border-blue-500 bg-white shadow-sm"
                 placeholder="Cerca articolo..."
               />
-              {/* SUGGESTIONS MOBILE */}
               {suggestions.length > 0 && (
                 <div className="absolute w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[110] max-h-[150px] overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
                   {suggestions.map((p) => (
@@ -206,6 +208,7 @@ export default function OrderCanvas({ currentClient, onClose, onOrderSuccess, is
               <div className="absolute top-[28px] left-0 right-1 z-[120] animate-in slide-in-from-top duration-200">
                 <div className={`p-2 border rounded-lg shadow-xl space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto custom-scrollbar ${isBlocked ? "bg-red-50 border-red-200" : "bg-white border-gray-100"}`}>
                   <p className="text-[10px] font-bold leading-tight text-gray-800">{selectedProduct.des_art}</p>
+                  
                   <div className="text-[8px] text-gray-400 flex items-center gap-1">
                     <span className="bg-gray-100 text-gray-600 font-mono px-1 py-0.5 rounded">{selectedProduct.cod_art}</span>
                     <span>•</span>
@@ -223,10 +226,29 @@ export default function OrderCanvas({ currentClient, onClose, onOrderSuccess, is
                     </div>
                   )}
 
-                  <div className="flex items-center gap-1">
-                    <input type="number" min="1" value={qty} onChange={handleQtyChange} className="w-12 p-1 border border-gray-200 rounded text-center text-[10px] font-bold text-gray-800 bg-white" />
-                    <button onClick={addToCart} disabled={isBlocked || qty === '' || qty === 0} className="bg-black text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400">+</button>
-                    <button onClick={() => { setSelectedProduct(null); setSearchTerm(""); setQty(1); setError(""); }} className="p-1 border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded text-[10px]">✕</button>
+                  <div className="flex items-center gap-2 mt-1">
+                    <input 
+                      type="number" 
+                      min="1" 
+                      value={qty} 
+                      onChange={handleQtyChange} 
+                      className="flex-1 h-10 border border-gray-200 rounded-lg text-center text-sm font-bold text-gray-800 bg-white focus:border-blue-500 outline-none min-w-0" 
+                    />
+                    
+                    <button 
+                      onClick={addToCart} 
+                      disabled={isBlocked || qty === '' || qty === 0} 
+                      className="flex-1 h-10 bg-black text-white rounded-lg text-lg font-bold hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 shadow-sm active:scale-95 transition-all"
+                    >
+                      +
+                    </button>
+                    
+                    <button 
+                      onClick={() => { setSelectedProduct(null); setSearchTerm(""); setQty(1); setError(""); }} 
+                      className="flex-1 h-10 border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 hover:border-red-200 rounded-lg text-sm font-bold bg-white transition-colors flex items-center justify-center"
+                    >
+                      ✕
+                    </button>
                   </div>
                 </div>
               </div>
@@ -235,49 +257,50 @@ export default function OrderCanvas({ currentClient, onClose, onOrderSuccess, is
 
           {/* DESTRA: CARRELLO */}
           <div className="w-1/2 flex flex-col gap-1 overflow-hidden pl-1">
-            <div className="flex items-center justify-between px-1">
+            
+            <div className="flex items-center justify-between px-1 h-6">
               <span className="text-[8px] font-bold text-gray-400 uppercase">Carrello</span>
               <span className="text-[8px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-bold">{cart.length}</span>
             </div>
+
             <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar pr-1">
               {cart.map((item) => {
                 const isDraft = !item.cod_art;
                 return (
                   <div key={item.id} className={`p-2 border rounded-lg shadow-sm ${isDraft ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'}`}>
-                    <div className="flex items-start justify-between gap-1">
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-[10px] font-bold leading-tight mb-1 ${isDraft ? 'text-amber-900 italic' : 'text-gray-800'}`}>{item.des_art || item.descrizione_libera}</p>
-
-                        {/* RIPRISTINATO: Dettagli nel carrello */}
-                        {!isDraft && (
-                          <>
-                            <div className="text-[8px] text-gray-400 flex items-center gap-1 mb-1">
-                              <span className="bg-gray-100 text-gray-600 font-mono px-1 py-0.5 rounded">{item.cod_art}</span>
-                              <span>•</span>
-                              <span>{item.linea}</span>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded text-[9px] font-bold inline-block">Qta: {item.qta_ordinata}</span>
-                              <span className="text-[8px] text-gray-400">{item.des_um} ({item.pezzi_conf} {item.des_tipo_um})</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      <button onClick={() => removeFromCart(item.id)} className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded text-[10px]">✕</button>
-                    </div>
+                     <div className="flex items-start justify-between gap-1">
+                       <div className="flex-1 min-w-0">
+                         <p className={`text-[10px] font-bold leading-tight mb-1 ${isDraft ? 'text-amber-900 italic' : 'text-gray-800'}`}>{item.des_art || item.descrizione_libera}</p>
+                         
+                         {!isDraft && (
+                            <>
+                              <div className="text-[8px] text-gray-400 flex items-center gap-1 mb-1">
+                                <span className="bg-gray-100 text-gray-600 font-mono px-1 py-0.5 rounded">{item.cod_art}</span>
+                                <span>•</span>
+                                <span>{item.linea}</span>
+                              </div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded text-[9px] font-bold inline-block">Qta: {item.qta_ordinata}</span>
+                                <span className="text-[8px] text-gray-400">{item.des_um} ({item.pezzi_conf} {item.des_tipo_um})</span>
+                              </div>
+                            </>
+                         )}
+                       </div>
+                       <button onClick={() => removeFromCart(item.id)} className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded text-[10px]">✕</button>
+                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
         </div>
-
-        {/* FOOTER MOBILE - CHAT */}
+        
+        {/* FOOTER MOBILE */}
         <div className="p-1 border-t border-gray-100 shrink-0">
-          <button
-            onClick={handleSendFullOrder}
-            disabled={cart.length === 0}
-            className="w-full h-8 bg-black text-white rounded-lg font-bold text-sm shadow-sm hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-400 transition-all flex justify-center items-center gap-2"
+          <button 
+            onClick={handleSendFullOrder} 
+            disabled={cart.length === 0} 
+            className="w-full h-10 bg-black text-white rounded-lg font-bold text-sm shadow-sm hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-400 transition-all flex justify-center items-center gap-2"
           >
             CONFERMA E INVIA
           </button>
