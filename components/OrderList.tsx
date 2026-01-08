@@ -46,7 +46,7 @@ export default function OrderList({ cod_cli }: { cod_cli: string }) {
       ) : (
         orders.map((order) => (
           <div key={order.id} className="group p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-blue-200 hover:shadow-md transition-all">
-            
+
             {/* NOME PRODOTTO */}
             <div className="mb-2">
               <p className="text-sm font-bold text-gray-800 leading-tight">
@@ -82,7 +82,7 @@ export default function OrderList({ cod_cli }: { cod_cli: string }) {
                 Qta: {order.qta_ordinata}
               </span>
               <span className="text-[10px] text-gray-400">
-                Venduto in {order.des_um} 
+                Venduto in {order.des_um}
                 {order.pezzi_conf ? ` (${order.pezzi_conf} ${order.des_tipo_um || ''})` : ''}
               </span>
             </div>
