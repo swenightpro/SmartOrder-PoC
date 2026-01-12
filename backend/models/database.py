@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 import logging
 
-from backend.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 
