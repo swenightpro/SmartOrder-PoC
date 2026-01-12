@@ -3,7 +3,7 @@ import logging
 from openai import OpenAI
 
 from config import settings
-from backend.models.schemas import (
+from models.schemas import (
     ProductSearchParams,
     Product,
     OrderHistoryItem,
