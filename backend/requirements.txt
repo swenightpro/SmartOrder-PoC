@@ -5,13 +5,14 @@ uvicorn[standard]==0.32.0
 # db
 mysql-connector-python==9.0.0
 
-# OpenAI
+# OpenAI e dipendenze critiche
 openai==1.51.0
+httpx==0.27.2
 
 # configuration
 pydantic==2.9.2
 pydantic-settings==2.5.2
 python-dotenv==1.0.1
 
-# logging
+# logging e utility
 python-multipart==0.0.12
