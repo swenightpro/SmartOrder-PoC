@@ -1,8 +1,8 @@
 from typing import List, Optional
 import logging
 
-from backend.models.database import db
-from backend.models.schemas import Product, OrderHistoryItem, ProductSearchParams
+from models.database import db
+from models.schemas import Product, OrderHistoryItem, ProductSearchParams
 
 logger = logging.getLogger(__name__)
 
