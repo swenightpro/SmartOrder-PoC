@@ -2,7 +2,7 @@ from typing import Optional, List
 import logging
 from openai import OpenAI
 
-from backend.config import settings
+from config import settings
 from backend.models.schemas import (
     ProductSearchParams,
     Product,
