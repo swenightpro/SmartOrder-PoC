@@ -17,6 +17,7 @@ interface OrderChatProps {
 export default function OrderChat({ selectedClient, messages, setMessages }: OrderChatProps) {
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -115,10 +116,59 @@ export default function OrderChat({ selectedClient, messages, setMessages }: Ord
     }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim() || !selectedClient) return;
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: input }]);
+
+    const userMessage = input.trim();
+
     setInput('');
+    setIsLoading(true);
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: userMessage
+    };
+    
+    setMessages(prev => [...prev,  userMsg]);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMessage, clientId: selectedClient.cod_cli })
+      });
+      
+      const data = await response.json();
+
+      if (data.success) {
+        const assistantMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: data.response
+        };
+        console.log(assistantMsg);
+        setMessages(prev => [...prev, assistantMsg]);
+      } else {
+        const errorMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: data.error || 'Errore di connessione. Verifica che il servizio sia attivo. Se il problema persiste, contatta l\'assistenza.'
+        };
+        setMessages(prev => [...prev, errorMsg]);
+      }
+    }
+    catch (error) {
+      console.error('Error sending message:', error);
+      const errorMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Errore di connessione. Verifica che il servizio sia attivo.'
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -141,6 +191,17 @@ export default function OrderChat({ selectedClient, messages, setMessages }: Ord
               </div>
             </div>
           ))
+        )}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-bl-none px-5 py-3 max-w-[85%]">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+              </div>
+            </div>
+          </div>
         )}
         <div ref={scrollRef} />
       </div>
