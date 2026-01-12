@@ -10,8 +10,8 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.config import settings
-from backend.routers import chat
+from config import settings
+from routers import chat
 
 log_level = logging.DEBUG if settings.api_debug else logging.INFO
 logging.basicConfig(
