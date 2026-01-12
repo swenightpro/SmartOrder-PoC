@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException
 import logging
 
-from backend.models.schemas import ChatRequest, ChatResponse, SearchContext
-from backend.services.ai_service import AIService
-from backend.services.db_service import DatabaseService
+from models.schemas import ChatRequest, ChatResponse, SearchContext
+from services.ai_service import AIService
+from services.db_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 
