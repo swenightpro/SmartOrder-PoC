@@ -64,12 +64,11 @@ async def health():
 import os
 
 if __name__ == "__main__":
-    # Railway assegna automaticamente una porta alla variabile PORT
     port = int(os.environ.get("PORT", settings.api_port))
     
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",  # IMPORTANTE: 0.0.0.0 invece di localhost o 127.0.0.1
+        host=settings.api_host,
         port=port,
         reload=settings.api_debug,
         log_level="info" if not settings.api_debug else "debug"

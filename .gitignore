@@ -34,6 +34,16 @@ yarn-error.log*
 .env*
 .env.local
 
+# Python environment
+venv/
+backend/venv/
+.venv/
+env/
+
+# Python cache (anche questa non va mai pushata)
+__pycache__/
+*.py[cod]
+
 # vercel
 .vercel
 

@@ -18,9 +18,10 @@ class Settings(BaseSettings):
     api_debug: bool = Field(False, alias="API_DEBUG")
     
     class Config:
-        env_file = str(Path(__file__).parent / ".env.local")
+        env_file = str(Path(__file__).parent.parent / ".env.local")
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"
 
 
 settings = Settings()
