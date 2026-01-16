@@ -26,7 +26,7 @@ export interface CartItem {
   des_tipo_um?: string;
 }
 
-const BLOCKING_STATUSES = ["ARTICOLO SOSPESO", "SU AUTORIZZAZIONE", "DISPONIBILE DAL"];
+const BLOCKING_STATUSES = ["ARTICOLO SOSPESO", "SU AUTORIZZAZIONE", "NON DISPONIBILE"];
 
 interface OrderCanvasProps {
   currentClient: Client | null;
