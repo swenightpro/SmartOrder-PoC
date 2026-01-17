@@ -10,6 +10,8 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     message: Optional[str] = Field(None, description="Messaggio di risposta")
     response: Optional[str] = Field(None, description="Messaggio di risposta (alias)")
+    product_codes: List[str] = Field(default_factory=list, description="Codici prodotti trovati")
+    order_confirmed: bool = Field(default=False, description="True se l'ordine è confermato e non richiede verifica aggiuntiva")
     
     def dict(self, **kwargs):
         data = super().dict(**kwargs)
@@ -63,3 +65,9 @@ class SearchContext(BaseModel):
     products: List[Product] = Field(default_factory=list)
     order_history: List[OrderHistoryItem] = Field(default_factory=list)
     search_params: ProductSearchParams
+
+
+class BusinessDecisionResponse(BaseModel):
+    message: str = Field(..., description="Messaggio di risposta all'utente")
+    product_codes: List[str] = Field(default_factory=list, description="Lista di codici articolo (cod_art) dei prodotti trovati/ordinati")
+    order_confirmed: bool = Field(default=False, description="True se l'ordine è confermato e non richiede verifica aggiuntiva, False se serve conferma dell'utente")

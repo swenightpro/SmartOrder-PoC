@@ -155,6 +155,7 @@ export default function Home() {
             selectedClient={selectedClient}
             messages={chatMessages}
             setMessages={setChatMessages}
+            refreshCart={refreshCart}
           />
         </div>
 
@@ -239,6 +240,7 @@ export default function Home() {
                 selectedClient={selectedClient}
                 messages={chatMessages}
                 setMessages={setChatMessages}
+                refreshCart={refreshCart}
               />
             </div>
           </>

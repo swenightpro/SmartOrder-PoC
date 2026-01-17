@@ -12,9 +12,10 @@ interface OrderChatProps {
   selectedClient: Client | null;
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  refreshCart?: () => void;
 }
 
-export default function OrderChat({ selectedClient, messages, setMessages }: OrderChatProps) {
+export default function OrderChat({ selectedClient, messages, setMessages, refreshCart }: OrderChatProps) {
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,7 +102,7 @@ export default function OrderChat({ selectedClient, messages, setMessages }: Ord
       mediaRecorder.current = recorder;
       recorder.start();
       setIsRecording(true);
-    } catch (e) {
+    } catch {
       alert("Impossibile accedere al microfono");
     }
   };
@@ -149,6 +150,30 @@ export default function OrderChat({ selectedClient, messages, setMessages }: Ord
         };
         console.log(assistantMsg);
         setMessages(prev => [...prev, assistantMsg]);
+
+        const productCodes = data.product_codes || [];
+        const orderConfirmed = data.order_confirmed === true;
+
+        if (orderConfirmed && productCodes.length === 1 && selectedClient) {
+          try {
+            const cartResponse = await fetch('/api/cart', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'add',
+                cod_cli: selectedClient.cod_cli,
+                cod_art: productCodes[0],
+                qta: 1
+              })
+            });
+
+            if (cartResponse.ok) {
+              refreshCart?.();
+            }
+          } catch (error) {
+            console.error('Errore chiamata carrello:', error);
+          }
+        }
       } else {
         const errorMsg: Message = {
           id: Date.now().toString(),

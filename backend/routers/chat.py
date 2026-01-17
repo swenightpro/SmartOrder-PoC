@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 import logging
 
-from models.schemas import ChatRequest, ChatResponse, SearchContext
+from models.schemas import ChatRequest, ChatResponse, SearchContext, BusinessDecisionResponse
 from services.ai_service import AIService
 from services.db_service import DatabaseService
 
@@ -18,6 +18,28 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
     try:
         logger.info(f"Nuova richiesta chat - Cliente: {request.client_id}, Messaggio: '{request.message}'")
         
+        message_lower = request.message.lower().strip()
+        usual_phrases = ["il solito", "come sempre", "quello di prima", "lo stesso", "come al solito"]
+        is_usual_request = any(phrase in message_lower for phrase in usual_phrases)
+        
+        if is_usual_request:
+            order_history = db_service.get_order_history(request.client_id, limit=1)
+            if order_history:
+                most_recent = order_history[0]
+                logger.info(f"Richiesta 'il solito' - uso prodotto più recente: {most_recent.cod_art}")
+                return ChatResponse(
+                    message=f"Come sempre, ho aggiunto {most_recent.des_art or most_recent.cod_art} al tuo ordine.",
+                    product_codes=[most_recent.cod_art],
+                    order_confirmed=True
+                )
+            else:
+                logger.info("Richiesta 'il solito' ma nessuno storico disponibile")
+                return ChatResponse(
+                    message="Non ho trovato ordini precedenti. Puoi specificare quale prodotto vuoi?",
+                    product_codes=[],
+                    order_confirmed=False
+                )
+        
         search_params = ai_service.extract_search_params(request.message)
         
         products = db_service.search_products(request.client_id, search_params)
@@ -29,14 +51,18 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             search_params=search_params
         )
         
-        response_message = ai_service.make_business_decision(
+        decision = ai_service.make_business_decision(
             request.message,
             search_context
         )
         
-        logger.info(f"Risposta generata: '{response_message}'")
+        logger.info(f"Risposta generata: message='{decision.message}', product_codes={decision.product_codes}, order_confirmed={decision.order_confirmed}")
         
-        return ChatResponse(message=response_message)
+        return ChatResponse(
+            message=decision.message,
+            product_codes=decision.product_codes,
+            order_confirmed=decision.order_confirmed
+        )
         
     except ValueError as e:
         logger.error(f"Errore validazione: {e}")

@@ -36,15 +36,22 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       response: data.message || data.response,
+      product_codes: data.product_codes || [],
+      order_confirmed: data.order_confirmed ?? false,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Chat API error:', error);
 
+    const err = error instanceof Error 
+      ? error 
+      : { message: String(error), code: undefined };
+    const errorWithCode = error as { code?: string; message?: string };
+    
     const isConnectionError = 
-      error.code === 'ECONNREFUSED' || 
-      error.code === 'ENOTFOUND' ||
-      error.message?.includes('fetch failed') ||
-      error.message?.includes('ECONNREFUSED');
+      errorWithCode.code === 'ECONNREFUSED' || 
+      errorWithCode.code === 'ENOTFOUND' ||
+      err.message?.includes('fetch failed') ||
+      err.message?.includes('ECONNREFUSED');
 
     if (isConnectionError) {
       return NextResponse.json(
@@ -59,7 +66,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { 
         success: false, 
-        error: error.message || 'Errore nella comunicazione con il servizio chat' 
+        error: err.message || 'Errore nella comunicazione con il servizio chat' 
       },
       { status: 500 }
     );
