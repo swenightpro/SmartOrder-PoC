@@ -3,7 +3,7 @@ fastapi==0.115.0
 uvicorn[standard]==0.32.0
 
 # db
-mysql-connector-python==9.0.0
+psycopg2-binary==2.9.9
 
 # OpenAI e dipendenze critiche
 openai==1.51.0
