@@ -1,13 +1,23 @@
-import mysql from 'mysql2/promise';
+import { Pool } from 'pg';
 
-const pool = mysql.createPool({
+const pool = new Pool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT),
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
+  ssl: {
+    rejectUnauthorized: false // Necessario per le connessioni esterne a Railway
+  }
 });
 
-export default pool;
+// Mock per mantenere la compatibilità con .execute() usato nelle API routes
+export default {
+  execute: async (query: string, params: any[]) => {
+    // Trasforma i placeholder '?' di MySQL in '$1, $2...' di Postgres
+    let i = 1;
+    const pgQuery = query.replace(/\?/g, () => `$${i++}`);
+    const result = await pool.query(pgQuery, params);
+    return [result.rows];
+  }
+};
