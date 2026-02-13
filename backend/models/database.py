@@ -1,8 +1,10 @@
 import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
+from typing import Optional, List, Dict, Any  
 from contextlib import contextmanager
 import logging
+
 from config import settings
 
 logger = logging.getLogger(__name__)
