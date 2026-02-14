@@ -6,14 +6,14 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  ssl: { rejectUnauthorized: false }
+  ssl: false 
 });
 
 export default {
-  execute: async (query: string, params: any[]) => {
+  execute: async (query: string, params: any[] = []) => {
     let i = 1;
     const pgQuery = query.replace(/\?/g, () => `$${i++}`);
     const result = await pool.query(pgQuery, params);
-    return [result.rows]; 
+    return [result.rows];
   }
 };
