@@ -2,9 +2,16 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
+class ChatMessage(BaseModel):
+    """Singolo messaggio nella storia della conversazione (per contesto IA)."""
+    role: str = Field(..., description="'user' o 'assistant'")
+    content: str = Field(..., description="Testo del messaggio")
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., description="Messaggio dell'utente")
     client_id: int = Field(..., alias="client_id", description="ID cliente")
+    history: Optional[List[ChatMessage]] = Field(default=None, description="Ultimi messaggi della conversazione (max 10, per memoria IA)")
 
 
 class ChatResponse(BaseModel):

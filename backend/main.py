@@ -49,7 +49,7 @@ async def root():
     return {
         "status": "ok",
         "service": "SmartOrder AI Backend",
-        "version": "1.0.0"
+        "version": "0.2.0"
     }
 
 

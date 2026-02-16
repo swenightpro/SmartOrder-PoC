@@ -72,7 +72,8 @@ class AIService:
     def make_business_decision(
         self,
         user_message: str,
-        search_context: SearchContext
+        search_context: SearchContext,
+        history: Optional[List[dict]] = None
     ) -> BusinessDecisionResponse:
         try:
             logger.info("IA sta prendendo una decisione commerciale...")
@@ -91,20 +92,29 @@ class AIService:
 
             REGOLE DI RAGIONAMENTO:
             1. IL 'SOLITO': Se l'utente chiede "il solito" o "come l'altra volta", cerca nello STORICO e aggiungi direttamente il prodotto più frequente o l'ultimo ordinato.
-            2. CONSIGLIO: Se l'utente è indeciso, guarda lo STORICO. Se ha già comprato un prodotto simile, suggerisci quello. Se non ha storico, suggerisci i primi 2 prodotti del catalogo spiegando perché sono validi.
+            2. CONSIGLIO: Se l'utente è indeciso, guarda lo STORICO. Se ha già comprato un prodotto simile, SUGGERISCI quello (ma NON aggiungere al carrello finché non dice sì). Se non ha storico, suggerisci i primi 2 prodotti del catalogo spiegando perché sono validi.
             3. TROPPI RISULTATI (>3): Non elencarli tutti. Di': "Ho trovato diverse opzioni per [X], preferisci una marca specifica o un formato particolare?" e proponi 2 alternative top.
-            4. CROSS-SELLING: Se aggiungi un prodotto (es. Pasta), suggerisci brevemente qualcosa che si abbina (es. "Ti serve anche del sugo?").
-            - SE l'utente dice "Sì", "OK" o conferma e tu avevi appena suggerito un prodotto specifico nel messaggio precedente, procedi all'aggiunta di quel prodotto anche se la lista prodotti attuale è vuota.
-            - In questo caso, recupera il COD_ART che hai menzionato tu stesso e impostalo in product_codes.
-
+            4. CROSS-SELLING: Suggerisci solo prodotti presenti in PRODOTTI DISPONIBILI ORA e che abbiano senso (es. per birra: stuzzichini, bibite; per pasta: sugo. Non suggerire sugo per un aperitivo a base di birra).
+            - SE l'utente dice "Sì", "OK", "aggiungi", "va bene" o conferma esplicitamente E tu avevi appena suggerito un prodotto specifico nel messaggio precedente, ALLORA procedi all'aggiunta (order_confirmed=TRUE, product_codes=[codice]).
+            - Se stai PROPONENDO o CHIEDENDO conferma ("Vuoi aggiungerla?", "Ti va bene?", "Quale preferisci?") l'utente NON ha ancora detto sì: metti SEMPRE order_confirmed=FALSE e product_codes=[].
+            - Usa la CONVERSAZIONE PRECEDENTE (se presente) per capire riferimenti ai vari messaggi precedenti.
 
             TONO: Cordiale, professionale, italiano naturale (evita traduzioni letterali dall'inglese).
 
-            LOGICA FLAG:
-            - order_confirmed = TRUE solo se hai un COD_ART certo da aggiungere.
-            - product_codes = [codice] solo se order_confirmed è TRUE."""
+            LOGICA FLAG (OBBLIGATORIA):
+            - order_confirmed = TRUE SOLO se l'utente ha GIÀ confermato (sì, ok, aggiungi, va bene, quella, ecc.) o ha detto "il solito". Se stai chiedendo "Vuoi aggiungerla?" / "Ti va bene?" → order_confirmed = FALSE.
+            - product_codes = [codice] SOLO se order_confirmed è TRUE. Se proponi senza conferma → product_codes = []."""
 
-            user_prompt = f"""Messaggio Utente: "{user_message}"
+            # Blocco memoria: ultimi messaggi della chat per contesto
+            conversation_block = ""
+            if history and len(history) > 0:
+                lines = []
+                for m in history:
+                    label = "Utente" if (m.get("role") or "").lower() == "user" else "Assistente"
+                    lines.append(f"{label}: {m.get('content', '').strip()}")
+                conversation_block = "--- CONVERSAZIONE PRECEDENTE ---\n" + "\n".join(lines) + "\n--- FINE CONVERSAZIONE ---\n\n"
+
+            user_prompt = f"""{conversation_block}Messaggio Utente (attuale): "{user_message}"
 
             DATI DI CONTESTO:
             --- STORICO ORDINI RECENTI DEL CLIENTE ---

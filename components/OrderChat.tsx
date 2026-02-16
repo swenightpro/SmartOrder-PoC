@@ -134,10 +134,16 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
     setMessages(prev => [...prev,  userMsg]);
 
     try {
+      const history = messages.slice(-10).map((m) => ({ role: m.role, content: m.content }));
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, clientId: selectedClient.cod_cli })
+        body: JSON.stringify({
+          message: userMessage,
+          clientId: selectedClient.cod_cli,
+          history,
+        }),
       });
       
       const data = await response.json();

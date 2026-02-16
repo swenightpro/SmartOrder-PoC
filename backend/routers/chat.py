@@ -51,9 +51,15 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             search_params=search_params
         )
         
+        # Memoria: ultimi 10 messaggi per contesto (max 5 turni)
+        history = None
+        if request.history:
+            history = [{"role": m.role, "content": m.content} for m in request.history[:10]]
+        
         decision = ai_service.make_business_decision(
             request.message,
-            search_context
+            search_context,
+            history=history
         )
         
         logger.info(f"Risposta generata: message='{decision.message}', product_codes={decision.product_codes}, order_confirmed={decision.order_confirmed}")

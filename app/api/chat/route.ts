@@ -4,7 +4,7 @@ const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:8
 
 export async function POST(request: Request) {
   try {
-    const { message, clientId } = await request.json();
+    const { message, clientId, history } = await request.json();
 
     const response = await fetch(`${PYTHON_SERVICE_URL}/chat`, {
       method: 'POST',
@@ -14,6 +14,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         message,
         client_id: clientId,
+        history: history ?? [],
       }),
     });
 
