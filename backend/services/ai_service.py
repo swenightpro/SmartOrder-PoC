@@ -1,5 +1,6 @@
 from typing import Optional, List
 import logging
+import openai
 from openai import OpenAI
 
 from config import settings
@@ -172,7 +173,7 @@ Make decision based on rules above."""
                     message="Mi dispiace, ho riscontrato un errore. Riprova tra un momento.",
                     product_codes=[]
                 )
-                
+
         except openai.RateLimitError as e:
             logger.error(f"Credito OpenAI esaurito: {e}")
             return BusinessDecisionResponse(
