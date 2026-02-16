@@ -10,16 +10,17 @@ export async function GET(request: Request) {
   try {
     const query = `
       SELECT 
-        p.id, p.cod_art, p.qta_ordinata, p.descrizione_libera,
+        p.id, p.cod_art, p.qta_ordinata, p.rif as descrizione_libera,
         a.des_art, a.des_um, a.pezzi_conf, a.des_tipo_um, a.linea, a.famiglia
       FROM preordclidet p 
       LEFT JOIN anaart a ON p.cod_art = a.cod_art 
       WHERE p.cod_cli = ?
     `;
     
-    const [rows] = await db.execute(query, [cod_cli]);
+    const [rows] = await db.execute(query, [parseInt(cod_cli)]);
     return NextResponse.json(rows);
   } catch (error: any) {
+    console.error("Errore GET /api/cart:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -32,9 +33,9 @@ export async function POST(request: Request) {
     if (action === 'add') {
       const data_ord = new Date().toISOString().split('T')[0];
       await db.execute(
-        `INSERT INTO preordclidet (cod_cli, cod_art, descrizione_libera, data_ord, qta_ordinata) 
+        `INSERT INTO preordclidet (cod_cli, cod_art, rif, data_ord, qta_ordinata) 
          VALUES (?, ?, ?, ?, ?)`,
-        [cod_cli, cod_art || null, descrizione_libera || null, data_ord, qta]
+        [parseInt(cod_cli), cod_art || null, descrizione_libera || null, data_ord, qta]
       );
     } 
     else if (action === 'remove') {
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    console.error("Errore POST /api/cart:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

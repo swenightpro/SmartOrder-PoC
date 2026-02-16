@@ -67,7 +67,10 @@ Always extract meaningful product terms, even if generic. Never return empty key
             else:
                 logger.error(f"Modello ha rifiutato: {message.refusal}")
                 raise ValueError(f"Modello ha rifiutato la richiesta: {message.refusal}")
-            
+        
+        except openai.RateLimitError as e:
+            logger.error(f"Credito OpenAI esaurito o limite raggiunto: {e}")
+            return ProductSearchParams(keywords=[], categoria=None, limit=10)
         except Exception as e:
             logger.error(f"Errore estrazione parametri: {e}", exc_info=True)
             raise
@@ -169,7 +172,15 @@ Make decision based on rules above."""
                     message="Mi dispiace, ho riscontrato un errore. Riprova tra un momento.",
                     product_codes=[]
                 )
-            
+                
+        except openai.RateLimitError as e:
+            logger.error(f"Credito OpenAI esaurito: {e}")
+            return BusinessDecisionResponse(
+                message="Spiacente, il servizio di Intelligenza Artificiale non è al momento disponibile (credito esaurito). Contatta l'amministratore.",
+                product_codes=[],
+                order_confirmed=False
+            )    
+
         except Exception as e:
             logger.error(f"Errore generazione risposta: {e}", exc_info=True)
             return BusinessDecisionResponse(
