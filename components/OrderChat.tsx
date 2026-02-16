@@ -160,22 +160,22 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
         const productCodes = data.product_codes || [];
         const orderConfirmed = data.order_confirmed === true;
 
-        if (orderConfirmed && productCodes.length === 1 && selectedClient) {
+        if (orderConfirmed && productCodes.length >= 1 && selectedClient) {
           try {
-            const cartResponse = await fetch('/api/cart', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'add',
-                cod_cli: selectedClient.cod_cli,
-                cod_art: productCodes[0],
-                qta: 1
-              })
-            });
-
-            if (cartResponse.ok) {
-              refreshCart?.();
+            for (const cod_art of productCodes) {
+              const cartResponse = await fetch('/api/cart', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'add',
+                  cod_cli: selectedClient.cod_cli,
+                  cod_art,
+                  qta: 1
+                })
+              });
+              if (!cartResponse.ok) console.error('Errore aggiunta al carrello:', cod_art);
             }
+            refreshCart?.();
           } catch (error) {
             console.error('Errore chiamata carrello:', error);
           }
