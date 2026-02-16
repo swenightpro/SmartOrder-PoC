@@ -24,6 +24,16 @@ class AIService:
         try:
             logger.info(f"Analisi semantica messaggio: '{user_message}'")
             
+            # --- AGGIUNTA: FILTRO CONFERME ---
+            # Se l'utente sta solo confermando, non vogliamo che il database cerchi "si" o "ok"
+            conferme = ["si", "ok", "va bene", "confermo", "aggiungi", "procedi", "corretto"]
+            msg_clean = user_message.lower().strip().replace("!", "").replace(".", "")
+            
+            if msg_clean in conferme:
+                logger.info("Rilevata conferma verbale: salto estrazione keyword per mantenere il contesto precedente.")
+                return ProductSearchParams(keywords=[], limit=10)
+            # ---------------------------------
+
             response = self.client.beta.chat.completions.parse(
                 model=self.model_fast,
                 messages=[
@@ -32,8 +42,9 @@ class AIService:
                         "content": """Sei un assistente alla ricerca prodotti.
                         - Estrai SEMPRE i termini principali del prodotto (es: 'acqua', 'birra', 'pasta').
                         - Includi marche o varianti se specificate.
+                        - Se l'utente conferma o accetta una proposta precedente senza nominare nuovi prodotti, lascia keywords vuote.
                         - Se l'utente chiede 'cosa hai' o è generico, lascia keywords vuote.
-                        - Non estrarre verbi o articoli."""
+                        - Non estrarre verbi, articoli o espressioni di cortesia."""
                     },
                     {
                         "role": "user",
@@ -44,8 +55,9 @@ class AIService:
             )
             
             params = response.choices[0].message.parsed
-            # Se l'IA non estrae nulla ma l'utente ha nominato un prodotto, forziamo una keyword
-            if not params.keywords and len(user_message.split()) < 5:
+            
+            # Se l'IA non estrae nulla ma il messaggio è breve e non è una conferma, lo usiamo come keyword
+            if not params.keywords and len(user_message.split()) < 5 and msg_clean not in conferme:
                 params.keywords = [user_message.strip()]
                 
             return params
@@ -82,7 +94,10 @@ class AIService:
             2. CONSIGLIO: Se l'utente è indeciso, guarda lo STORICO. Se ha già comprato un prodotto simile, suggerisci quello. Se non ha storico, suggerisci i primi 2 prodotti del catalogo spiegando perché sono validi.
             3. TROPPI RISULTATI (>3): Non elencarli tutti. Di': "Ho trovato diverse opzioni per [X], preferisci una marca specifica o un formato particolare?" e proponi 2 alternative top.
             4. CROSS-SELLING: Se aggiungi un prodotto (es. Pasta), suggerisci brevemente qualcosa che si abbina (es. "Ti serve anche del sugo?").
-            
+            - SE l'utente dice "Sì", "OK" o conferma e tu avevi appena suggerito un prodotto specifico nel messaggio precedente, procedi all'aggiunta di quel prodotto anche se la lista prodotti attuale è vuota.
+            - In questo caso, recupera il COD_ART che hai menzionato tu stesso e impostalo in product_codes.
+
+
             TONO: Cordiale, professionale, italiano naturale (evita traduzioni letterali dall'inglese).
 
             LOGICA FLAG:
