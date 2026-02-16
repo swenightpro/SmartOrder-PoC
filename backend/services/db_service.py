@@ -12,19 +12,19 @@ class DatabaseService:
         cod_cli: int,
         search_params: ProductSearchParams
     ) -> List[Product]:
-        # INIZIALIZZAZIONE VARIABILI (Evita UnboundLocalError)
         meaningful_keywords = []
         if search_params.keywords:
             meaningful_keywords = [kw.lower().strip() for kw in search_params.keywords if len(kw.strip()) > 0]
 
         try:
-            logger.info(f"Ricerca prodotti per cliente {cod_cli} - keywords: {meaningful_keywords}")
+            # LOG CRUCIALE: Vediamo cosa arriva dall'IA
+            logger.info(f"Ricerca prodotti per cliente {cod_cli} - Keywords: {meaningful_keywords}")
             
             effective_limit = search_params.limit or 50
             conditions = []
             params = []
             
-            # 1. Filtro Assortimento (Postgres friendly)
+            # 1. Filtro Assortimento (Obbligatorio se esiste un assortimento per il cliente)
             assortment_condition = """
                 (
                     NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s)
@@ -37,40 +37,31 @@ class DatabaseService:
             # 2. Filtro Stato
             conditions.append("(stato IS NULL OR stato NOT IN ('ARTICOLO SOSPESO', 'SU AUTORIZZAZIONE', 'DISPONIBILE DAL'))")
             
-            # 3. Keyword matching (OR logic)
+            # 3. Keyword matching - MODIFICATO: Se non ci sono keyword, NON aggiungiamo questa condizione
+            # così la query restituirà tutto l'assortimento disponibile.
             if meaningful_keywords:
                 keyword_conditions = []
                 for keyword in meaningful_keywords:
-                    keyword_conditions.append("(LOWER(des_art) LIKE %s OR LOWER(cod_art) LIKE %s)")
-                    params.extend([f"%{keyword}%", f"%{keyword}%"])
+                    keyword_conditions.append("(LOWER(des_art) LIKE %s OR LOWER(cod_art) LIKE %s OR LOWER(linea) LIKE %s)")
+                    params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
                 
                 conditions.append(f"({' OR '.join(keyword_conditions)})")
             
-            # 4. Filtro Categoria
-            if search_params.categoria:
-                conditions.append("(LOWER(linea) LIKE %s OR LOWER(settore) LIKE %s OR LOWER(famiglia) LIKE %s)")
-                cat = f"%{search_params.categoria.lower()}%"
-                params.extend([cat, cat, cat])
-            
             where_clause = " AND ".join(conditions)
             query = f"""
-                SELECT cod_art, des_art, des_um, pezzi_conf, des_tipo_um, stato, linea, settore, famiglia, sottofamiglia
+                SELECT cod_art, des_art, des_um, pezzi_conf, des_tipo_um, 
+                       stato, linea, settore, famiglia, sottofamiglia
                 FROM anaart
                 WHERE {where_clause}
-                ORDER BY des_art ASC LIMIT %s
+                ORDER BY des_art ASC
+                LIMIT %s
             """
             params.append(effective_limit)
             
             results = db.execute_query(query, tuple(params))
+            logger.info(f"Risultati query database: {len(results)} righe trovate")
             
-            # Se non trovo nulla con la categoria, riprovo senza categoria (Fallback)
-            if len(results) == 0 and search_params.categoria and meaningful_keywords:
-                logger.info("Nessun risultato con categoria, provo fallback solo su keywords")
-                # (Qui potresti ripetere una query semplificata se necessario)
-
-            products = [Product(**row) for row in results]
-            logger.info(f"Trovati {len(products)} prodotti per cliente {cod_cli}")
-            return products
+            return [Product(**row) for row in results]
             
         except Exception as e:
             logger.error(f"Errore ricerca prodotti: {e}", exc_info=True)

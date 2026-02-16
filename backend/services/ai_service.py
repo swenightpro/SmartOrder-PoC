@@ -29,12 +29,11 @@ class AIService:
                 messages=[
                     {
                         "role": "system",
-                        "content": """Sei un esperto di catalogo prodotti. Il tuo compito è capire COSA sta cercando l'utente.
-                        
-                        - Estrai parole chiave significative (marca, tipo, variante).
-                        - Se l'utente chiede un consiglio generico (es. "cosa mi consigli?"), lascia keywords vuote ma identifica la categoria se possibile.
-                        - Correggi eventuali errori di battitura (es. "birra peroni" invece di "birra peronni").
-                        - Se l'utente vuole 'il solito', non estrarre keyword ma lascia che sia il contesto dello storico a decidere."""
+                        "content": """Sei un assistente alla ricerca prodotti.
+                        - Estrai SEMPRE i termini principali del prodotto (es: 'acqua', 'birra', 'pasta').
+                        - Includi marche o varianti se specificate.
+                        - Se l'utente chiede 'cosa hai' o è generico, lascia keywords vuote.
+                        - Non estrarre verbi o articoli."""
                     },
                     {
                         "role": "user",
@@ -44,7 +43,12 @@ class AIService:
                 response_format=ProductSearchParams
             )
             
-            return response.choices[0].message.parsed
+            params = response.choices[0].message.parsed
+            # Se l'IA non estrae nulla ma l'utente ha nominato un prodotto, forziamo una keyword
+            if not params.keywords and len(user_message.split()) < 5:
+                params.keywords = [user_message.strip()]
+                
+            return params
             
         except openai.RateLimitError:
             logger.error("Quota OpenAI esaurita")
