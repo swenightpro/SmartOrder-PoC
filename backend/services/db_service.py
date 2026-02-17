@@ -19,8 +19,7 @@ class DatabaseService:
 
         try:
             logger.info(f"Ricerca prodotti per cliente {cod_cli} - Keywords originali: {meaningful_keywords}")
-            
-            effective_limit = search_params.limit or 50
+            effective_limit = (search_params.limit or 50) if meaningful_keywords else 100
             conditions = []
             params = []
             
@@ -80,6 +79,26 @@ class DatabaseService:
             
         except Exception as e:
             logger.error(f"Errore ricerca prodotti: {e}", exc_info=True)
+            return []
+
+    @staticmethod
+    def get_available_cod_art_for_client(cod_cli: int, limit: int = 500) -> List[str]:
+        """Restituisce i cod_art disponibili per il cliente (assortimento + stato). Usato per validare 'il solito' / ultimo ordinato."""
+        try:
+            assortment_condition = """
+                (NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s)
+                 OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s AND cod_art = anaart.cod_art))
+            """
+            query = f"""
+                SELECT cod_art FROM anaart
+                WHERE {assortment_condition}
+                AND (stato IS NULL OR stato NOT IN ('ARTICOLO SOSPESO', 'SU AUTORIZZAZIONE', 'DISPONIBILE DAL'))
+                LIMIT %s
+            """
+            results = db.execute_query(query, (cod_cli, cod_cli, limit))
+            return [row["cod_art"] for row in results if row.get("cod_art")]
+        except Exception as e:
+            logger.error(f"Errore get_available_cod_art: {e}")
             return []
 
     @staticmethod

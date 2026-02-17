@@ -162,6 +162,7 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
 
         if (orderConfirmed && productCodes.length >= 1 && selectedClient) {
           try {
+            const failed: string[] = [];
             for (const cod_art of productCodes) {
               const cartResponse = await fetch('/api/cart', {
                 method: 'POST',
@@ -173,11 +174,30 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
                   qta: 1
                 })
               });
-              if (!cartResponse.ok) console.error('Errore aggiunta al carrello:', cod_art);
+              if (!cartResponse.ok) {
+                console.error('Errore aggiunta al carrello:', cod_art);
+                failed.push(cod_art);
+              }
             }
             refreshCart?.();
+            if (failed.length > 0) {
+              const followUp: Message = {
+                id: (Date.now() + 2).toString(),
+                role: 'assistant',
+                content: failed.length === productCodes.length
+                  ? 'Ho provato ad aggiungere i prodotti al carrello, ma al momento non risultano disponibili per te. Prova a chiedere altre opzioni.'
+                  : `Alcuni prodotti non risultano al momento disponibili e non sono stati aggiunti al carrello (codici: ${failed.join(', ')}). Gli altri sono stati inseriti.`
+              };
+              setMessages(prev => [...prev, followUp]);
+            }
           } catch (error) {
             console.error('Errore chiamata carrello:', error);
+            const errorCart: Message = {
+              id: (Date.now() + 2).toString(),
+              role: 'assistant',
+              content: 'Non sono riuscito ad aggiornare il carrello. Riprova tra poco.'
+            };
+            setMessages(prev => [...prev, errorCart]);
           }
         }
       } else {

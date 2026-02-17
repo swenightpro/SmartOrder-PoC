@@ -19,9 +19,30 @@ export async function GET(request: Request) {
     
     const [rows] = await db.execute(query, [parseInt(cod_cli)]);
     return NextResponse.json(rows);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Errore GET /api/cart:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Errore server' },
+      { status: 500 }
+    );
+  }
+}
+
+/** Verifica se il prodotto è disponibile per il cliente (assortimento + stato). */
+async function isProductAvailableForClient(cod_cli: number, cod_art: string): Promise<boolean> {
+  try {
+    const [rows] = await db.execute(
+      `SELECT 1 FROM anaart a
+       WHERE a.cod_art = ?
+         AND (a.stato IS NULL OR a.stato NOT IN ('ARTICOLO SOSPESO', 'SU AUTORIZZAZIONE', 'DISPONIBILE DAL'))
+         AND (NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ?)
+              OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ? AND cod_art = a.cod_art))
+       LIMIT 1`,
+      [cod_art, cod_cli, cod_cli]
+    );
+    return Array.isArray(rows) && rows.length > 0;
+  } catch {
+    return false;
   }
 }
 
@@ -31,11 +52,22 @@ export async function POST(request: Request) {
     const { action, cod_cli, cod_art, qta, id, descrizione_libera } = body;
 
     if (action === 'add') {
+      const cod_cli_num = parseInt(cod_cli);
+      if (!cod_art) {
+        return NextResponse.json({ success: false, error: 'Codice articolo mancante' }, { status: 400 });
+      }
+      const available = await isProductAvailableForClient(cod_cli_num, cod_art);
+      if (!available) {
+        return NextResponse.json(
+          { success: false, error: 'Prodotto non disponibile per il cliente' },
+          { status: 400 }
+        );
+      }
       const data_ord = new Date().toISOString().split('T')[0];
       await db.execute(
         `INSERT INTO preordclidet (cod_cli, cod_art, rif, data_ord, qta_ordinata) 
          VALUES (?, ?, ?, ?, ?)`,
-        [parseInt(cod_cli), cod_art || null, descrizione_libera || null, data_ord, qta]
+        [cod_cli_num, cod_art, descrizione_libera || null, data_ord, qta ?? 1]
       );
     } 
     else if (action === 'remove') {
@@ -43,8 +75,11 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Errore POST /api/cart:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Errore server' },
+      { status: 500 }
+    );
   }
 }
