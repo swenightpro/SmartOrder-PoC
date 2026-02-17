@@ -8,7 +8,6 @@ export type Message = {
   content: string;
 };
 
-/** Formatta il testo per la bolla chat: escape HTML, poi \n → <br /> e **testo** → grassetto. Solo per messaggi assistente (markdown). */
 function formatChatMessage(text: string): string {
   if (!text) return "";
   const escaped = text
@@ -34,6 +33,8 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const pendingVoiceSendRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -106,14 +107,22 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
 
       const recorder = new MediaRecorder(stream);
       volumeHistory.current = [];
-
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
       recorder.onstop = () => {
         ctx.close();
         stream.getTracks().forEach(t => t.stop());
+        if (pendingVoiceSendRef.current && audioChunksRef.current.length > 0) {
+          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          pendingVoiceSendRef.current = false;
+          sendVoiceBlob(blob);
+        }
       };
 
       mediaRecorder.current = recorder;
-      recorder.start();
+      recorder.start(500);
       setIsRecording(true);
     } catch {
       alert("Impossibile accedere al microfono");
@@ -122,57 +131,30 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
 
   const stopRecording = (save: boolean) => {
     if (!mediaRecorder.current) return;
+    if (save) pendingVoiceSendRef.current = true;
     mediaRecorder.current.stop();
     setIsRecording(false);
-
-    if (save) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: "🎙️ (Messaggio Vocale)" }]);
-    }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || !selectedClient) return;
-
-    const userMessage = input.trim();
-
-    setInput('');
+  const sendMessageContent = async (userMessage: string, isVoice = false) => {
+    if (!selectedClient) return;
+    const displayContent = isVoice ? `🎙️ ${userMessage}` : userMessage;
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: displayContent };
+    setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: userMessage
-    };
-    
-    setMessages(prev => [...prev,  userMsg]);
-
+    const history = [...messages, { role: 'user' as const, content: displayContent }].slice(-10).map((m) => ({ role: m.role, content: m.content }));
     try {
-      const history = messages.slice(-10).map((m) => ({ role: m.role, content: m.content }));
-
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMessage,
-          clientId: selectedClient.cod_cli,
-          history,
-        }),
+        body: JSON.stringify({ message: userMessage, clientId: selectedClient.cod_cli, history }),
       });
-      
       const data = await response.json();
-
       if (data.success) {
-        const assistantMsg: Message = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: data.response
-        };
-        console.log(assistantMsg);
+        const assistantMsg: Message = { id: Date.now().toString(), role: 'assistant', content: data.response };
         setMessages(prev => [...prev, assistantMsg]);
-
         const productCodes = data.product_codes || [];
         const orderConfirmed = data.order_confirmed === true;
-
         if (orderConfirmed && productCodes.length >= 1 && selectedClient) {
           try {
             const failed: string[] = [];
@@ -180,17 +162,9 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
               const cartResponse = await fetch('/api/cart', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'add',
-                  cod_cli: selectedClient.cod_cli,
-                  cod_art,
-                  qta: 1
-                })
+                body: JSON.stringify({ action: 'add', cod_cli: selectedClient.cod_cli, cod_art, qta: 1 }),
               });
-              if (!cartResponse.ok) {
-                console.error('Errore aggiunta al carrello:', cod_art);
-                failed.push(cod_art);
-              }
+              if (!cartResponse.ok) failed.push(cod_art);
             }
             refreshCart?.();
             if (failed.length > 0) {
@@ -199,40 +173,56 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
                 role: 'assistant',
                 content: failed.length === productCodes.length
                   ? 'Ho provato ad aggiungere i prodotti al carrello, ma al momento non risultano disponibili per te. Prova a chiedere altre opzioni.'
-                  : `Alcuni prodotti non risultano al momento disponibili e non sono stati aggiunti al carrello (codici: ${failed.join(', ')}). Gli altri sono stati inseriti.`
+                  : `Alcuni prodotti non risultano al momento disponibili e non sono stati aggiunti al carrello (codici: ${failed.join(', ')}). Gli altri sono stati inseriti.`,
               };
               setMessages(prev => [...prev, followUp]);
             }
-          } catch (error) {
-            console.error('Errore chiamata carrello:', error);
-            const errorCart: Message = {
-              id: (Date.now() + 2).toString(),
-              role: 'assistant',
-              content: 'Non sono riuscito ad aggiornare il carrello. Riprova tra poco.'
-            };
-            setMessages(prev => [...prev, errorCart]);
+          } catch {
+            setMessages(prev => [...prev, { id: (Date.now() + 2).toString(), role: 'assistant', content: 'Non sono riuscito ad aggiornare il carrello. Riprova tra poco.' }]);
           }
         }
       } else {
-        const errorMsg: Message = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: data.error || 'Errore di connessione. Verifica che il servizio sia attivo. Se il problema persiste, contatta l\'assistenza.'
-        };
-        setMessages(prev => [...prev, errorMsg]);
+        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: data.error || 'Errore di connessione. Verifica che il servizio sia attivo.' }]);
       }
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Error sending message:', error);
-      const errorMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Errore di connessione. Verifica che il servizio sia attivo.'
-      };
-      setMessages(prev => [...prev, errorMsg]);
+      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', content: 'Errore di connessione. Verifica che il servizio sia attivo.' }]);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const sendVoiceBlob = async (blob: Blob) => {
+    if (!selectedClient) return;
+    setIsLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', blob, 'audio.webm');
+      const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (!res.ok) {
+        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: json.error || 'Trascrizione non disponibile. Riprova.' }]);
+        return;
+      }
+      const text = (json.text || '').trim();
+      if (!text) {
+        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: '🎙️ (nessun testo riconosciuto)' }, { id: (Date.now() + 1).toString(), role: 'assistant', content: 'Non ho capito nulla dall\'audio. Puoi ripetere o scrivere?' }]);
+        return;
+      }
+      await sendMessageContent(text, true);
+    } catch (e) {
+      console.error('Transcribe error:', e);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: 'Impossibile trascrivere l\'audio. Verifica il microfono e riprova.' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || !selectedClient) return;
+    const userMessage = input.trim();
+    setInput('');
+    await sendMessageContent(userMessage, false);
   };
 
   return (

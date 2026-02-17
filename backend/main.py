@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routers import chat
+from routers import chat, transcribe
 
 log_level = logging.DEBUG if settings.api_debug else logging.INFO
 logging.basicConfig(
@@ -42,6 +42,7 @@ app.add_middleware(
 )
 
 app.include_router(chat.router)
+app.include_router(transcribe.router)
 
 
 @app.get("/")
