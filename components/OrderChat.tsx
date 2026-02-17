@@ -8,6 +8,19 @@ export type Message = {
   content: string;
 };
 
+/** Formatta il testo per la bolla chat: escape HTML, poi \n → <br /> e **testo** → grassetto. Solo per messaggi assistente (markdown). */
+function formatChatMessage(text: string): string {
+  if (!text) return "";
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  return escaped
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br />");
+}
+
 interface OrderChatProps {
   selectedClient: Client | null;
   messages: Message[];
@@ -238,7 +251,11 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
                   ? 'bg-blue-600 text-white rounded-br-none'
                   : 'bg-white text-gray-800 border border-gray-100 rounded-bl-none'
                 }`}>
-                {m.content}
+                {m.role === "assistant" ? (
+                  <span className="break-words [&_strong]:font-semibold" dangerouslySetInnerHTML={{ __html: formatChatMessage(m.content) }} />
+                ) : (
+                  m.content
+                )}
               </div>
             </div>
           ))
