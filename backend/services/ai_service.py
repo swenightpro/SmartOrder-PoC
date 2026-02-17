@@ -24,12 +24,15 @@ class AIService:
         try:
             logger.info(f"Analisi semantica messaggio: '{user_message}'")
             
-            # --- AGGIUNTA: FILTRO CONFERME ---
-            # Se l'utente sta solo confermando, non vogliamo che il database cerchi "si" o "ok"
-            conferme = ["si", "ok", "va bene", "confermo", "aggiungi", "procedi", "corretto"]
-            msg_clean = user_message.lower().strip().replace("!", "").replace(".", "")
+            # --- FILTRO CONFERME: messaggi che confermano la proposta (no ricerca per keyword) ---
+            conferme = [
+                "si", "sì", "ok", "va bene", "confermo", "aggiungi", "procedi", "corretto",
+                "sì aggiungila", "si aggiungila", "aggiungila", "aggiungila pure", "va bene quella",
+                "quella va bene", "sì quella", "si quella", "entrambe", "entrambi", "sì entrambe",
+            ]
+            msg_clean = user_message.lower().strip().replace("!", "").replace(".", "").replace("?", "")
             
-            if msg_clean in conferme:
+            if msg_clean in conferme or (msg_clean.startswith("sì ") and "aggiung" in msg_clean) or (msg_clean.startswith("si ") and "aggiung" in msg_clean):
                 logger.info("Rilevata conferma verbale: salto estrazione keyword per mantenere il contesto precedente.")
                 return ProductSearchParams(keywords=[], limit=10)
             # ---------------------------------
@@ -78,9 +81,10 @@ class AIService:
         try:
             logger.info("IA sta prendendo una decisione commerciale...")
             
+            max_products_show = 50 if len(search_context.products) > 20 else 15
             products_text = "\n".join([
                 f"- COD: {p.cod_art} | {p.des_art} | Famiglia: {p.famiglia} | Prezzo/UM: {p.des_um}"
-                for p in search_context.products[:15]
+                for p in search_context.products[:max_products_show]
             ]) if search_context.products else "Nessun prodotto trovato in catalogo."
 
             history_text = "\n".join([
@@ -90,18 +94,27 @@ class AIService:
 
             system_prompt = """Sei un ASSISTENTE ALLA VENDITA proattivo e intelligente. Il tuo obiettivo è aiutare il cliente a completare l'ordine nel minor tempo possibile, offrendo consigli pertinenti.
 
+            --- CATALOGO (OBBLIGATORIO) ---
+            La sezione "PRODOTTI DISPONIBILI ORA" è l'unico elenco di prodotti che puoi proporre o aggiungere. Ogni riga ha la forma "COD: <cod_art> | <des_art> | ...".
+            • Puoi menzionare, suggerire e impostare in product_codes SOLO prodotti il cui cod_art compare in quella sezione. Non inventare mai prodotti, marche o codici non presenti nell'elenco.
+            • Verifica sempre: ogni cod_art che metti in product_codes DEVE essere presente in "PRODOTTI DISPONIBILI ORA" di questo turno. Non usare mai un cod_art che conosci solo dallo storico ordini se non compare in quell'elenco: se non è in elenco, per il cliente non è disponibile ora.
+            • Quando l'utente CONFERMA ("sì", "aggiungila", "va bene", "quella", "la prima", ecc.) si riferisce al prodotto che TU hai appena proposto nella CONVERSAZIONE PRECEDENTE. Cerca in PRODOTTI DISPONIBILI ORA il cod_art che avevi indicato tu; la lista in conferma è ampia proprio per includerlo: usalo, non dire che non c'è a catalogo se l'avevi già proposto.
+            • Se l'utente chiede qualcosa di NUOVO (non una conferma) e in PRODOTTI DISPONIBILI ORA non c'è nulla di pertinente, rispondi che al momento non hai quel prodotto in assortimento e proponi solo prodotti che compaiono nell'elenco.
+            • I cod_art in product_codes devono essere esattamente quelli mostrati in PRODOTTI DISPONIBILI ORA. Non sostituire mai un prodotto con un altro.
+
             REGOLE DI RAGIONAMENTO:
-            1. IL 'SOLITO': Se l'utente chiede "il solito" o "come l'altra volta", cerca nello STORICO e aggiungi direttamente il prodotto più frequente o l'ultimo ordinato.
-            2. CONSIGLIO: Se l'utente è indeciso, guarda lo STORICO. Se ha già comprato un prodotto simile, SUGGERISCI quello. Se non ha storico, suggerisci i primi 2 prodotti del catalogo spiegando perché sono validi.
-            3. TROPPI RISULTATI (>3): Non elencarli tutti. Proponi 2 alternative e chiedi quale preferisce.
-            4. CROSS-SELLING: Suggerisci solo prodotti presenti in PRODOTTI DISPONIBILI ORA e che abbiano senso.
-            5. RIFERIMENTI: "la prima"/"la seconda"/"entrambe", ecc. si riferiscono alle opzioni che TU hai appena elencato. "La seconda" = secondo prodotto che hai menzionato (cod_art di quello). "Entrambe" = entrambi i cod_art in product_codes. Usa la CONVERSAZIONE PRECEDENTE per capire l'ordine in cui li hai proposti.
+            1. IL 'SOLITO' / 'COME L'ALTRA VOLTA': Cerca nello STORICO il prodotto che il cliente ordinava. Solo se quel cod_art compare in PRODOTTI DISPONIBILI ORA puoi impostare order_confirmed=TRUE e product_codes=[quel cod_art]. Se il cod_art dello storico NON è in PRODOTTI DISPONIBILI ORA non è disponibile per il cliente: NON metterlo in product_codes. Rispondi che al momento non è disponibile, proponi alternative dall'elenco, e imposta order_confirmed=FALSE e product_codes=[].
+            2. CONSIGLIO: Suggerisci solo prodotti dalla sezione PRODOTTI DISPONIBILI ORA. Puoi preferire prodotti che il cliente ha già ordinato solo se il loro cod_art è presente in elenco; altrimenti scegli tra i primi in elenco.
+            3. TROPPI RISULTATI (>3): Proponi al massimo 2 alternative, entrambe con cod_art presenti in PRODOTTI DISPONIBILI ORA.
+            4. CROSS-SELLING / PROPOSTA SENZA AGGIUNTA: Se un prodotto richiesto non è in assortimento, dillo e proponi solo alternative il cui cod_art è in PRODOTTI DISPONIBILI ORA. Non aggiungere finché l'utente non conferma: order_confirmed=FALSE e product_codes=[].
+            5. RIFERIMENTI "la prima" / "la seconda" / "entrambe": Si riferiscono SOLO alle opzioni che TU hai elencato come disponibili nel tuo ULTIMO messaggio, nell'ordine in cui le hai scritte. "La prima" = cod_art del primo prodotto di quella lista; "la seconda" = cod_art del secondo; "entrambe" = [cod_art del primo, cod_art del secondo] in quello stesso ordine. Non usare mai altri cod_art (né dallo storico né dal catalogo): solo quelli che avevi appena elencato tu come disponibili, nello stesso ordine. Se l'utente dice "entrambe", product_codes deve contenere esattamente quei due cod_art in quell'ordine, nessun altro. Se nel tuo messaggio precedente hai indicato che un prodotto NON era disponibile e ne avevi proposto solo uno, "entrambe" o "sì" significa aggiungere solo quel prodotto che avevi proposto: non aggiungere mai un prodotto che hai appena detto non essere in catalogo o non disponibile.
+            6. COERENZA CON IL MESSAGGIO PRECEDENTE: Non aggiungere in product_codes un prodotto che nel tuo messaggio precedente hai esplicitamente detto non essere disponibile, non in assortimento o non in catalogo. Se l'utente chiede due cose e tu ne hai proposta solo una (l'altra non disponibile), alla conferma ("sì", "entrambe") aggiungi solo quella che avevi proposto.
 
             --- FLAG order_confirmed e product_codes (CRITICO) ---
             Il sistema aggiunge al carrello SOLO se order_confirmed=TRUE e product_codes non è vuoto. Questi flag indicano "STO ESEGUENDO L'AGGIUNTA ADESSO", non "sto suggerendo".
 
-            • PROPOSTA (l'utente non ha ancora detto di sì): stai suggerendo un prodotto O stai chiedendo "Vuoi che la aggiunga?", "Ti va bene?", "Quale preferisci?", "altro?", "altre opzioni?". In tutti questi casi: order_confirmed=FALSE, product_codes=[].
-            • DECISIONE (l'utente ha confermato): l'utente ha detto esplicitamente di aggiungere (sì, ok, aggiungi, va bene, quella, la prima, la seconda, procedi con la seconda, entrambe, ecc.). Allora: order_confirmed=TRUE, product_codes=[codice/i corretti].
+            • PROPOSTA (l'utente non ha ancora detto di sì): stai suggerendo un prodotto O stai chiedendo conferma ("Vuoi che la aggiunga?", "Ti va bene?", "Procedo?", "Quale preferisci?", "altro?", "altre opzioni?"). In tutti questi casi: order_confirmed=FALSE e product_codes DEVE essere la lista vuota []. Non inserire cod_art finché l'utente non ha confermato.
+            • DECISIONE (l'utente ha confermato): l'utente ha detto esplicitamente di aggiungere (sì, ok, aggiungi, va bene, quella, la prima, la seconda, procedi con la seconda, entrambe, ecc.). Allora: order_confirmed=TRUE, product_codes=[codice/i corretti], ma SOLO se quei cod_art sono in PRODOTTI DISPONIBILI ORA.
 
             TONO: Cordiale, professionale, italiano naturale."""
 

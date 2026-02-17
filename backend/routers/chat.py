@@ -19,18 +19,30 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
         logger.info(f"Nuova richiesta chat - Cliente: {request.client_id}, Messaggio: '{request.message}'")
         
         message_lower = request.message.lower().strip()
-        usual_phrases = ["il solito", "come sempre", "quello di prima", "lo stesso", "come al solito"]
+        usual_phrases = [
+            "il solito", "come sempre", "quello di prima", "lo stesso", "come al solito",
+            "come l'altra volta", "l'ultimo", "ultimo ordinato", "l'ultima volta"
+        ]
         is_usual_request = any(phrase in message_lower for phrase in usual_phrases)
         
         if is_usual_request:
-            order_history = db_service.get_order_history(request.client_id, limit=1)
+            order_history = db_service.get_order_history(request.client_id, limit=10)
+            available_cod_art = set(db_service.get_available_cod_art_for_client(request.client_id))
+            # Ultimo ordinato che sia ancora disponibile (in assortimento per il cliente)
+            for item in order_history:
+                if item.cod_art in available_cod_art:
+                    logger.info(f"Richiesta 'il solito' - uso ultimo disponibile: {item.cod_art}")
+                    return ChatResponse(
+                        message=f"Come sempre, ho aggiunto {item.des_art or item.cod_art} al tuo ordine.",
+                        product_codes=[item.cod_art],
+                        order_confirmed=True
+                    )
             if order_history:
-                most_recent = order_history[0]
-                logger.info(f"Richiesta 'il solito' - uso prodotto più recente: {most_recent.cod_art}")
+                logger.info("Richiesta 'il solito' ma nessun prodotto dello storico è disponibile ora")
                 return ChatResponse(
-                    message=f"Come sempre, ho aggiunto {most_recent.des_art or most_recent.cod_art} al tuo ordine.",
-                    product_codes=[most_recent.cod_art],
-                    order_confirmed=True
+                    message="Al momento non ho disponibile il prodotto che ordini di solito. Vuoi che ti proponga altre opzioni?",
+                    product_codes=[],
+                    order_confirmed=False
                 )
             else:
                 logger.info("Richiesta 'il solito' ma nessuno storico disponibile")
@@ -62,12 +74,19 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             history=history
         )
         
-        logger.info(f"Risposta generata: message='{decision.message}', product_codes={decision.product_codes}, order_confirmed={decision.order_confirmed}")
+        # Solo prodotti effettivamente passati all'IA (disponibili per il cliente) possono essere restituiti
+        allowed_cod_art = {p.cod_art for p in products}
+        filtered_codes = [c for c in (decision.product_codes or []) if c in allowed_cod_art]
+        if (decision.product_codes or []) and not filtered_codes:
+            logger.warning(f"IA ha restituito cod_art non in lista disponibili: {decision.product_codes}, filtrati a []")
+        order_confirmed = decision.order_confirmed and len(filtered_codes) > 0
+        
+        logger.info(f"Risposta generata: message='{decision.message}', product_codes={filtered_codes}, order_confirmed={order_confirmed}")
         
         return ChatResponse(
             message=decision.message,
-            product_codes=decision.product_codes,
-            order_confirmed=decision.order_confirmed
+            product_codes=filtered_codes,
+            order_confirmed=order_confirmed
         )
         
     except ValueError as e:
