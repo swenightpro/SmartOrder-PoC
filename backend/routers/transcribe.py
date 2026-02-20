@@ -40,13 +40,18 @@ async def transcribe_audio(file: UploadFile = File(...)) -> dict:
         if not "." in name:
             name = "audio.webm"
         file_like = io.BytesIO(data)
+        
         transcription = client.audio.transcriptions.create(
             model="whisper-1",
             file=(name, file_like, file.content_type or "audio/webm"),
+            prompt=settore_prompt,
+            language="it"   #Forzo a lingua Italiana
         )
+
         text = (transcription.text or "").strip()
         logger.info(f"Trascrizione completata, lunghezza testo: {len(text)}")
         return {"text": text}
+
     except Exception as e:
         logger.error(f"Errore Whisper: {e}", exc_info=True)
         raise HTTPException(

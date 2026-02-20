@@ -18,7 +18,7 @@ class AIService:
     def __init__(self):
         self.client = OpenAI(api_key=settings.openai_api_key)
         self.model_fast = "gpt-4o-mini"
-        self.model_smart = "gpt-4o" 
+        self.model_smart = "gpt-4o-2024-08-06" 
     
     def extract_search_params(self, user_message: str) -> ProductSearchParams:
         try:
