@@ -96,7 +96,13 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
   const startRecording = async () => {
     if (!selectedClient) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+            echoCancellation: true,
+            autoGainControl: true,
+            noiseSuppression: true
+        }
+      });
 
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(stream);
@@ -105,7 +111,7 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      const recorder = new MediaRecorder(stream);
+      const recorder = new MediaRecorder(stream, {mimeType: 'audio/webm;codecs=opus'}); //codecs=opus formato piu' stabile per Whisper
       volumeHistory.current = [];
       audioChunksRef.current = [];
       recorder.ondataavailable = (e) => {
@@ -122,7 +128,7 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
       };
 
       mediaRecorder.current = recorder;
-      recorder.start(500);
+      recorder.start(1000);
       setIsRecording(true);
     } catch {
       alert("Impossibile accedere al microfono");
