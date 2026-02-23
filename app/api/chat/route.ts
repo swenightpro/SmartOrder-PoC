@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       success: true,
       response: data.message || data.response,
       product_codes: data.product_codes || [],
+      product_items: data.product_items || [],
       order_confirmed: data.order_confirmed ?? false,
     });
   } catch (error: unknown) {

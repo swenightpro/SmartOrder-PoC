@@ -159,16 +159,18 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
       if (data.success) {
         const assistantMsg: Message = { id: Date.now().toString(), role: 'assistant', content: data.response };
         setMessages(prev => [...prev, assistantMsg]);
-        const productCodes = data.product_codes || [];
+        const productItems = Array.isArray(data.product_items) && data.product_items.length > 0
+          ? data.product_items.map((it: { cod_art: string; quantity?: number }) => ({ cod_art: it.cod_art, qta: Number(it.quantity) || 1 }))
+          : (data.product_codes || []).map((cod_art: string) => ({ cod_art, qta: 1 }));
         const orderConfirmed = data.order_confirmed === true;
-        if (orderConfirmed && productCodes.length >= 1 && selectedClient) {
+        if (orderConfirmed && productItems.length >= 1 && selectedClient) {
           try {
             const failed: string[] = [];
-            for (const cod_art of productCodes) {
+            for (const { cod_art, qta } of productItems) {
               const cartResponse = await fetch('/api/cart', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'add', cod_cli: selectedClient.cod_cli, cod_art, qta: 1 }),
+                body: JSON.stringify({ action: 'add', cod_cli: selectedClient.cod_cli, cod_art, qta }),
               });
               if (!cartResponse.ok) failed.push(cod_art);
             }
@@ -177,7 +179,7 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
               const followUp: Message = {
                 id: (Date.now() + 2).toString(),
                 role: 'assistant',
-                content: failed.length === productCodes.length
+                content: failed.length === productItems.length
                   ? 'Ho provato ad aggiungere i prodotti al carrello, ma al momento non risultano disponibili per te. Prova a chiedere altre opzioni.'
                   : `Alcuni prodotti non risultano al momento disponibili e non sono stati aggiunti al carrello (codici: ${failed.join(', ')}). Gli altri sono stati inseriti.`,
               };

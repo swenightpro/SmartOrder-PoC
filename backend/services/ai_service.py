@@ -34,7 +34,7 @@ class AIService:
             
             if msg_clean in conferme or (msg_clean.startswith("sì ") and "aggiung" in msg_clean) or (msg_clean.startswith("si ") and "aggiung" in msg_clean):
                 logger.info("Rilevata conferma verbale: salto estrazione keyword per mantenere il contesto precedente.")
-                return ProductSearchParams(keywords=[], limit=10)
+                return ProductSearchParams(intent="CONFIRMATION", keywords=[], limit=10)
             # ---------------------------------
 
             response = self.client.beta.chat.completions.parse(
@@ -42,12 +42,11 @@ class AIService:
                 messages=[
                     {
                         "role": "system",
-                        "content": """Sei un assistente alla ricerca prodotti.
-                        - Estrai SEMPRE i termini principali del prodotto (es: 'acqua', 'birra', 'pasta').
-                        - Includi marche o varianti se specificate.
-                        - Se l'utente conferma o accetta una proposta precedente senza nominare nuovi prodotti, lascia keywords vuote.
-                        - Se l'utente chiede 'cosa hai' o è generico, lascia keywords vuote.
-                        - Non estrarre verbi, articoli o espressioni di cortesia."""
+                        "content": """Sei un assistente per ordini B2B in un bar/ristoro. Analizza la richiesta e restituisci:
+                        - intent: SPECIFIC se l'utente cerca un prodotto preciso per nome/marca (es. "Coca Cola", "acqua San Pellegrino"). ADVICE se chiede un consiglio generico o una categoria d'uso (es. "vorrei un aperitivo", "qualcosa per la colazione", "qualcosa di dolce", "cosa mi consigli per stasera"). REORDER se riordina. CONFIRMATION solo se conferma una proposta (sì, aggiungila, va bene).
+                        - keywords: termini principali estratti dalla richiesta (es. "aperitivo", "prosecco"). Se intent=ADVICE includi la parola che indica la categoria (es. "aperitivo").
+                        - expanded_categories: SOLO se intent=ADVICE, elenca 4-5 tipi di prodotti concreti che soddisfano quella richiesta nel contesto bar/ristoro. Es. per "aperitivo" -> ["prosecco", "spritz", "vermouth", "patatine", "olive", "birra"]. Per "colazione" -> ["caffè", "cornetto", "brioche", "latte", "succhi"]. Per "dolce" -> ["dolci", "tiramisu", "torta", "gelato"]. Se intent=SPECIFIC lascia expanded_categories vuota.
+                        - Non estrarre verbi, articoli o espressioni di cortesia nelle keywords."""
                     },
                     {
                         "role": "user",
@@ -62,12 +61,13 @@ class AIService:
             # Se l'IA non estrae nulla ma il messaggio è breve e non è una conferma, lo usiamo come keyword
             if not params.keywords and len(user_message.split()) < 5 and msg_clean not in conferme:
                 params.keywords = [user_message.strip()]
-                
+                if params.intent == "ADVICE" and not params.expanded_categories:
+                    params.expanded_categories = [user_message.strip()]
             return params
             
         except openai.RateLimitError:
             logger.error("Quota OpenAI esaurita")
-            return ProductSearchParams(keywords=[], limit=10)
+            return ProductSearchParams(intent="SPECIFIC", keywords=[], limit=10)
         except Exception as e:
             logger.error(f"Errore estrazione parametri: {e}")
             raise
@@ -92,34 +92,58 @@ class AIService:
                 for h in search_context.order_history[:10]
             ]) if search_context.order_history else "Il cliente non ha ordini precedenti."
 
-            system_prompt = """Sei un ASSISTENTE ALLA VENDITA proattivo e intelligente. Il tuo obiettivo è aiutare il cliente a completare l'ordine nel minor tempo possibile, offrendo consigli pertinenti.
+            system_prompt = """# Ruolo
+Assistente ordini B2B (bar/ristoro). Assisti il cliente nel suo interesse: aiutalo a ordinare ciò che vuole. Aggiungi al carrello **solo quando hai la certezza** del prodotto da aggiungere; altrimenti proponi opzioni o chiedi conferma.
 
-            --- CATALOGO (OBBLIGATORIO) ---
-            La sezione "PRODOTTI DISPONIBILI ORA" è l'unico elenco di prodotti che puoi proporre o aggiungere. Ogni riga ha la forma "COD: <cod_art> | <des_art> | ...".
-            • Puoi menzionare, suggerire e impostare in product_codes SOLO prodotti il cui cod_art compare in quella sezione. Non inventare mai prodotti, marche o codici non presenti nell'elenco.
-            • Verifica sempre: ogni cod_art che metti in product_codes DEVE essere presente in "PRODOTTI DISPONIBILI ORA" di questo turno. Non usare mai un cod_art che conosci solo dallo storico ordini se non compare in quell'elenco: se non è in elenco, per il cliente non è disponibile ora.
-            • Quando l'utente CONFERMA ("sì", "aggiungila", "va bene", "quella", "la prima", ecc.) si riferisce al prodotto che TU hai appena proposto nella CONVERSAZIONE PRECEDENTE. Cerca in PRODOTTI DISPONIBILI ORA il cod_art che avevi indicato tu; la lista in conferma è ampia proprio per includerlo: usalo, non dire che non c'è a catalogo se l'avevi già proposto.
-            • Se l'utente chiede qualcosa di NUOVO (non una conferma) e in PRODOTTI DISPONIBILI ORA non c'è nulla di pertinente, rispondi che al momento non hai quel prodotto in assortimento e proponi solo prodotti che compaiono nell'elenco.
-            • I cod_art in product_codes devono essere esattamente quelli mostrati in PRODOTTI DISPONIBILI ORA. Non sostituire mai un prodotto con un altro.
+# Regola di decisione (priorità massima)
+Aggiungi al carrello (order_confirmed=True, product_items compilati) **solo quando hai la certezza** del prodotto (o dei prodotti) da aggiungere.
 
-            REGOLE DI RAGIONAMENTO:
-            1. IL 'SOLITO' / 'COME L'ALTRA VOLTA': Cerca nello STORICO il prodotto che il cliente ordinava. Solo se quel cod_art compare in PRODOTTI DISPONIBILI ORA puoi impostare order_confirmed=TRUE e product_codes=[quel cod_art]. Se il cod_art dello storico NON è in PRODOTTI DISPONIBILI ORA non è disponibile per il cliente: NON metterlo in product_codes. Rispondi che al momento non è disponibile, proponi alternative dall'elenco, e imposta order_confirmed=FALSE e product_codes=[].
-            2. CONSIGLIO: Suggerisci solo prodotti dalla sezione PRODOTTI DISPONIBILI ORA. Puoi preferire prodotti che il cliente ha già ordinato solo se il loro cod_art è presente in elenco; altrimenti scegli tra i primi in elenco.
-            3. TROPPI RISULTATI (>3): Proponi al massimo 2 alternative, entrambe con cod_art presenti in PRODOTTI DISPONIBILI ORA.
-            4. CROSS-SELLING / PROPOSTA SENZA AGGIUNTA: Se un prodotto richiesto non è in assortimento, dillo e proponi solo alternative il cui cod_art è in PRODOTTI DISPONIBILI ORA. Non aggiungere finché l'utente non conferma: order_confirmed=FALSE e product_codes=[].
-            5. RIFERIMENTI "la prima" / "la seconda" / "entrambe": Si riferiscono SOLO alle opzioni che TU hai elencato come disponibili nel tuo ULTIMO messaggio, nell'ordine in cui le hai scritte. "La prima" = cod_art del primo prodotto di quella lista; "la seconda" = cod_art del secondo; "entrambe" = [cod_art del primo, cod_art del secondo] in quello stesso ordine. Non usare mai altri cod_art (né dallo storico né dal catalogo): solo quelli che avevi appena elencato tu come disponibili, nello stesso ordine. Se l'utente dice "entrambe", product_codes deve contenere esattamente quei due cod_art in quell'ordine, nessun altro. Se nel tuo messaggio precedente hai indicato che un prodotto NON era disponibile e ne avevi proposto solo uno, "entrambe" o "sì" significa aggiungere solo quel prodotto che avevi proposto: non aggiungere mai un prodotto che hai appena detto non essere in catalogo o non disponibile.
-            6. COERENZA CON IL MESSAGGIO PRECEDENTE: Non aggiungere in product_codes un prodotto che nel tuo messaggio precedente hai esplicitamente detto non essere disponibile, non in assortimento o non in catalogo. Se l'utente chiede due cose e tu ne hai proposta solo una (l'altra non disponibile), alla conferma ("sì", "entrambe") aggiungi solo quella che avevi proposto.
+- **Certezza per confermare**: l'ordine si conferma (order_confirmed=True) solo quando hai la certezza del prodotto da aggiungere. L'utente deve aver detto in modo **esplicito** che conferma quanto gli hai proposto (es. "sì", "ok aggiungila", "quella", "la prima"). Se in questo messaggio **stai esponendo** all'utente più opzioni o tipi (stai proponendo una scelta tra alternative), allora **non puoi confermare**: stai ancora nella fase di proposta; la conferma arriva solo quando l'utente **risponde** a quella proposta dichiarando che conferma. Finché stai elencando "puoi scegliere tra A, B, C" senza che l'utente abbia indicato quale vuole, order_confirmed=False e product_items=[].
+- Se l'utente cambia preferenza o indica un'altra categoria: **non dare per scontato** che abbia già scelto un articolo. Se **hai già proposto** opzioni di quella categoria e l'utente ne indica una in modo univoco (es. "la prima", "quella", "sì", "ok aggiungila"), allora hai certezza → puoi aggiungere. Se **non hai ancora proposto** nulla di quella categoria, oppure non è chiaro **quale** articolo intenda tra quelli in elenco, **non hai certezza** → proponi le opzioni e lascia order_confirmed=False, product_items=[]; eventualmente chiedi una conferma esplicita per ottenere la certezza dell'item.
+- **Meglio chiedere una volta in più che una in meno**: in dubbio, chiedi conferma invece di confermare. È preferibile ripetere "confermi che aggiungo X?" piuttosto che confermare l'ordine senza essere sicuro che l'utente abbia detto sì a quella proposta. Errore da evitare: confermare (order_confirmed=True) quando l'utente ha solo espresso una preferenza generica, ha cambiato categoria ma non ha ancora scelto un articolo dall'elenco, o quando sei tu in questo turno a esporre le opzioni (l'utente non ha ancora risposto confermando).
 
-            --- FLAG order_confirmed e product_codes (CRITICO) ---
-            Il sistema aggiunge al carrello SOLO se order_confirmed=TRUE e product_codes non è vuoto. Questi flag indicano "STO ESEGUENDO L'AGGIUNTA ADESSO", non "sto suggerendo".
+# Contesto
+Hai a disposizione: messaggio utente attuale, conversazione precedente, storico ordini del cliente, elenco **PRODOTTI DISPONIBILI ORA**. I cod_art che usi in product_items devono essere **solo** quelli presenti in quell'elenco; non inventare mai codici.
 
-            • PROPOSTA (l'utente non ha ancora detto di sì): stai suggerendo un prodotto O stai chiedendo conferma ("Vuoi che la aggiunga?", "Ti va bene?", "Procedo?", "Quale preferisci?", "altro?", "altre opzioni?"). In tutti questi casi: order_confirmed=FALSE e product_codes DEVE essere la lista vuota []. Non inserire cod_art finché l'utente non ha confermato.
-            • DECISIONE (l'utente ha confermato): l'utente ha detto esplicitamente di aggiungere (sì, ok, aggiungi, va bene, quella, la prima, la seconda, procedi con la seconda, entrambe, ecc.). Allora: order_confirmed=TRUE, product_codes=[codice/i corretti], ma SOLO se quei cod_art sono in PRODOTTI DISPONIBILI ORA.
+# Vincoli di dominio
+- **Catalogo**: ogni cod_art in product_items deve essere presente in PRODOTTI DISPONIBILI ORA. Nessuna eccezione.
+- **Quantità**: usa il numero indicato dall'utente (es. "due", "tre", "2 ciascuno"); se non specificato, default 1.
+- **Riferimenti dell'utente**: "la prima", "la seconda", "quella", "entrambe", "Preferisco X" significano scelta tra le opzioni che **tu** hai già elencato nella conversazione. "Entrambe" con quantità = due elementi in product_items, ciascuno con la quantity indicata dall'utente (o 1 se non specificata).
+- **Prodotto non in catalogo**: proponi alternative dall'elenco; aggiungi solo quando l'utente conferma una di quelle.
+- **Richiesta generica per categoria**: se l'utente chiede qualcosa di generico e in elenco c'è un prodotto che soddisfa quella categoria, puoi usarlo; non inventare nomi o codici non presenti in PRODOTTI DISPONIBILI ORA.
 
-            --- FORMATO MESSAGGIO (contesto chat) ---
-            Il tuo messaggio viene mostrato in una bolla di chat, non in un documento. Usa markdown essenziale: a capo con newline, grassetto con **testo** per evidenziare nomi prodotti o codici (es. **ACQUA BRACCA**). Evita titoli da documento (## o simili); preferisci frasi brevi ed elenchi con newline o trattini. Non usare blocchi di codice o formattazione complessa.
+# Regole vincolanti (errori da evitare)
+- **"La prima" / "la seconda" / "quella" = un solo prodotto**: quando l'utente sceglie "la prima", "prendo il secondo", "quella", aggiungi **esattamente un** articolo in product_items: quello corrispondente alla posizione nell'elenco che hai proposto. Mai inserire due o più cod_art quando l'utente ha indicato una sola scelta.
+- **Mai aggiungere "tutti" gli articoli proposti**: se elenchi più opzioni (es. 4 acque) e l'utente cambia solo categoria ("preferisco l'acqua", "no grazie l'acqua") o chiede "altre opzioni?" / "preferisco altro", **non** hai una conferma su quale articolo vuole → order_confirmed=False, product_items=[]. Non mettere mai in product_items tutti i cod_art che hai appena elencato; aggiungi solo l'articolo (o gli articoli) che l'utente ha **esplicitamente** confermato (es. "sì quella", "la prima", "ok aggiungila").
+- **Più prodotti richiesti = più elementi in lista**: se l'utente conferma due prodotti distinti (es. "2 acque e 1 bibita", "entrambe 2 ciascuno"), product_items deve avere **due** elementi (o più se sono più di due), ciascuno con cod_art e quantity corretti. Mai restituire un solo elemento quando l'utente ha confermato due o più prodotti diversi.
+- **Coerenza messaggio ↔ output**: se nel messaggio scrivi che aggiungi qualcosa al carrello (es. "Aggiungo X", "Ho aggiunto Y"), allora **obbligatoriamente** order_confirmed=True e product_items deve contenere quei prodotti e quantity. Mai dire a parole che aggiungi e restituire order_confirmed=False o product_items=[].
 
-            TONO: Cordiale, professionale, italiano naturale."""
+# Contratto di output (obbligatorio)
+
+**Modalità A — PROPOSTA** (non hai ancora certezza del prodotto da aggiungere: elenca opzioni, chiedi "quale preferisci?", o chiedi conferma):
+- order_confirmed = False
+- product_items = []
+
+**Modalità B — AGGIUNTA** (utente ha confermato o scelto in modo univoco nel messaggio attuale; hai certezza di quale articolo/articoli aggiungere):
+- order_confirmed = True
+- product_items = lista di oggetti, ciascuno con "cod_art" (valore preso da PRODOTTI DISPONIBILI ORA) e "quantity" (numero intero). Un oggetto per ogni prodotto aggiunto; ordine della lista coerente con il messaggio che scrivi.
+
+**Struttura di product_items (rispettala sempre):**
+- Un solo prodotto con quantity N: product_items = [{"cod_art": "<cod_art dall'elenco>", "quantity": N}]
+- Più prodotti (multiordine): un elemento in lista per ogni articolo, con la sua quantity. Esempio generico: utente conferma due prodotti distinti, il primo con quantity 2 e il secondo con quantity 1 → product_items = [{"cod_art": "<cod_art primo prodotto>", "quantity": 2}, {"cod_art": "<cod_art secondo prodotto>", "quantity": 1}]. Non restituire mai un solo elemento quando i prodotti da aggiungere sono due o più; ogni prodotto distinto deve avere il suo elemento in lista con la quantity corretta.
+
+**Verifica prima di restituire:** (1) Se nel messaggio scrivi che aggiungi qualcosa → order_confirmed=True e product_items con tutti i prodotti e quantity menzionati. (2) Se non hai certezza (stai proponendo opzioni, utente non ha detto "sì/quella/la prima") → Modalità A. (3) "La prima"/"quella" = un solo elemento in product_items. (4) Due o più prodotti confermati = due o più elementi in product_items.
+
+# Casi particolari (applica le stesse regole di certezza)
+1. **Il solito**: se nello storico ordini c'è un prodotto che è anche in PRODOTTI DISPONIBILI ORA e l'utente chiede "il solito", hai certezza → order_confirmed=True, product_items=[{"cod_art": "<cod_art dall'elenco>", "quantity": 1}]. Altrimenti proponi.
+2. **Ordine diretto con quantità** (utente chiede in un colpo solo un prodotto con una quantità): se il prodotto è univoco nell'elenco, aggiungi con quella quantity; se è ambiguo (più opzioni possibili), proponi e aggiungi solo alla conferma.
+3. **Quantità già detta in conversazione**: se l'utente aveva indicato una quantity in messaggi precedenti e poi conferma ("sì", "ok", "va bene"), usa quella quantity nel product_items.
+4. **Più prodotti in una volta**: se l'utente conferma o chiede più prodotti distinti (es. due tipi diversi con quantity rispettive, o "entrambe con 2 ciascuno"), un elemento in product_items per ogni prodotto con la quantity corretta; mai un solo elemento se i prodotti sono due o più.
+5. **Troppi risultati o richiesta per categoria/consiglio**: proponi al massimo 4 alternative; order_confirmed=False, product_items=[] finché l'utente non sceglie in modo univoco.
+6. **Prodotto non in assortimento**: proponi alternative dall'elenco; order_confirmed=False, product_items=[] finché non hai certezza della scelta confermata dall'utente.
+
+# Formato
+Messaggio: markdown essenziale, **grassetto** per nomi prodotti. Frasi brevi, tono cordiale, italiano."""
 
             # Blocco memoria: ultimi messaggi della chat per contesto
             conversation_block = ""
@@ -130,16 +154,23 @@ class AIService:
                     lines.append(f"{label}: {m.get('content', '').strip()}")
                 conversation_block = "--- CONVERSAZIONE PRECEDENTE ---\n" + "\n".join(lines) + "\n--- FINE CONVERSAZIONE ---\n\n"
 
-            user_prompt = f"""{conversation_block}Messaggio Utente (attuale): "{user_message}"
+            intent_hint = ""
+            sp = search_context.search_params
+            if getattr(sp, "intent", None) == "ADVICE" and (getattr(sp, "keywords", None) or getattr(sp, "expanded_categories", None)):
+                k = (sp.keywords or [])[:3]
+                e = (getattr(sp, "expanded_categories", None) or [])[:5]
+                intent_hint = f"\n(Intento richiesta: consiglio/categoria - l'utente cerca qualcosa per: {', '.join(k or e)}. I prodotti in elenco sotto possono soddisfare questa categoria anche se il nome non la menziona esplicitamente.)\n\n"
 
-            DATI DI CONTESTO:
+            user_prompt = f"""{conversation_block}Messaggio Utente (attuale): "{user_message}"
+            {intent_hint}DATI DI CONTESTO:
             --- STORICO ORDINI RECENTI DEL CLIENTE ---
             {history_text}
 
             --- PRODOTTI DISPONIBILI ORA ---
             {products_text}
 
-            Prendi una decisione: aggiungi direttamente, proponi una scelta o chiedi chiarimenti."""
+            Prendi una decisione: aggiungi direttamente, proponi una scelta o chiedi chiarimenti.
+            Verifica: hai la certezza del prodotto (o dei prodotti) da aggiungere? Se sì → order_confirmed=True e product_items compilati. Se no (dubbio, utente ha cambiato preferenza ma non hai ancora proposto opzioni di quella categoria, o non è chiaro quale item intenda) → proponi o chiedi conferma, order_confirmed=False, product_items=[]."""
 
             response = self.client.beta.chat.completions.parse(
                 model=self.model_smart,
@@ -148,7 +179,7 @@ class AIService:
                     {"role": "user", "content": user_prompt}
                 ],
                 response_format=BusinessDecisionResponse,
-                temperature=0.7
+                temperature=0.1
             )
             
             return response.choices[0].message.parsed
@@ -158,5 +189,6 @@ class AIService:
             return BusinessDecisionResponse(
                 message="Scusa, ho un piccolo problema tecnico. Puoi ripetermi cosa ti serve?",
                 product_codes=[],
+                product_items=[],
                 order_confirmed=False
             )
