@@ -4,7 +4,7 @@ const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || 'http://localhost:8
 
 export async function POST(request: Request) {
   try {
-    const { message, clientId, history } = await request.json();
+    const { message, clientId, history, pending_cart_edits } = await request.json();
 
     const response = await fetch(`${PYTHON_SERVICE_URL}/chat`, {
       method: 'POST',
@@ -15,6 +15,7 @@ export async function POST(request: Request) {
         message,
         client_id: clientId,
         history: history ?? [],
+        pending_cart_edits: pending_cart_edits ?? null,
       }),
     });
 
@@ -40,6 +41,8 @@ export async function POST(request: Request) {
       product_codes: data.product_codes || [],
       product_items: data.product_items || [],
       order_confirmed: data.order_confirmed ?? false,
+      cart_edits: data.cart_edits ?? null,
+      edit_confirmed: data.edit_confirmed ?? false,
     });
   } catch (error: unknown) {
     console.error('Chat API error:', error);

@@ -2,7 +2,7 @@ from typing import List, Optional
 import logging
 
 from models.database import db
-from models.schemas import Product, OrderHistoryItem, ProductSearchParams
+from models.schemas import Product, OrderHistoryItem, ProductSearchParams, CartItem
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +99,28 @@ class DatabaseService:
             return [row["cod_art"] for row in results if row.get("cod_art")]
         except Exception as e:
             logger.error(f"Errore get_available_cod_art: {e}")
+            return []
+
+    @staticmethod
+    def get_cart(cod_cli: int) -> List[CartItem]:
+        """Restituisce il carrello corrente (preordine) del cliente per intent EDIT."""
+        try:
+            query = """
+                SELECT p.id, p.cod_art, p.qta_ordinata, a.des_art
+                FROM preordclidet p
+                LEFT JOIN anaart a ON p.cod_art = a.cod_art
+                WHERE p.cod_cli = %s
+                ORDER BY p.id
+            """
+            results = db.execute_query(query, (cod_cli,))
+            return [CartItem(
+                id=row["id"],
+                cod_art=row["cod_art"],
+                qta_ordinata=float(row["qta_ordinata"]),
+                des_art=row.get("des_art")
+            ) for row in results]
+        except Exception as e:
+            logger.error(f"Errore recupero carrello: {e}")
             return []
 
     @staticmethod

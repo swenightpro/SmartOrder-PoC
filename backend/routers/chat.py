@@ -162,37 +162,51 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
                 )
         
         search_params = ai_service.extract_search_params(request.message)
-        
+        intent = getattr(search_params, "intent", None)
+
+        # Intent EDIT: carrello vuoto → messaggio chiaro senza chiamare l'IA
+        if intent == "EDIT":
+            cart = db_service.get_cart(request.client_id)
+            if not cart:
+                return ChatResponse(
+                    message="Il carrello è vuoto, non c'è nulla da modificare. Vuoi aggiungere qualcosa?",
+                    cart_edits=None,
+                    edit_confirmed=False,
+                )
+
         products = db_service.search_products(request.client_id, search_params)
         
         # Se l'utente conferma ("sì", "la prima", "prendo il secondo") la lista prodotti
         # è spesso vuota/keyword-less (CONFIRMATION) e restituisce i primi N per ordine alfabetico.
-        # I prodotti proposti nel turno prima potrebbero non esserci → il backend li filtrava e
-        # l'utente vedeva "Aggiungo X" ma product_items vuoto. Includiamo anche i prodotti
-        # della ricerca fatta sull'ultimo messaggio utente (es. "vorrei un aperitivo").
+        # Includiamo prodotti dalla ricerca sull'ultimo messaggio utente e sull'ultimo messaggio
+        # assistente (dove spesso sono nominati i prodotti proposti, es. "Hai scelto Heineken e Beltè...").
         if search_params.intent == "CONFIRMATION" and request.history:
-            last_user_content = None
-            for m in reversed(request.history):
-                if (getattr(m, "role", "") or "").lower() == "user":
-                    last_user_content = getattr(m, "content", "") or ""
-                    break
-            if last_user_content and last_user_content.strip():
-                params_prev = ai_service.extract_search_params(last_user_content.strip())
-                products_prev = db_service.search_products(request.client_id, params_prev)
-                seen = set(p.cod_art for p in products)
-                for p in products_prev:
-                    if p.cod_art not in seen:
-                        seen.add(p.cod_art)
-                        products.append(p)
-                if products_prev:
-                    logger.info(f"Conferma: inclusi {len(products_prev)} prodotti dalla ricerca sul messaggio precedente")
+            seen = set(p.cod_art for p in products)
+            for role_attr, role_val in [("user", "user"), ("assistant", "assistant")]:
+                last_content = None
+                for m in reversed(request.history):
+                    if (getattr(m, "role", "") or "").lower() == role_val:
+                        last_content = getattr(m, "content", "") or ""
+                        break
+                if last_content and last_content.strip():
+                    params_prev = ai_service.extract_search_params(last_content.strip())
+                    products_prev = db_service.search_products(request.client_id, params_prev)
+                    for p in products_prev:
+                        if p.cod_art not in seen:
+                            seen.add(p.cod_art)
+                            products.append(p)
+                    if products_prev:
+                        logger.info(f"Conferma: inclusi {len(products_prev)} prodotti dalla ricerca sull'ultimo messaggio {role_attr}")
         
         order_history = db_service.get_order_history(request.client_id, limit=10)
-        
+        cart_for_context = db_service.get_cart(request.client_id) if intent == "EDIT" else None
+        pending_cart_edits = getattr(request, "pending_cart_edits", None) or None
         search_context = SearchContext(
             products=products,
             order_history=order_history,
-            search_params=search_params
+            search_params=search_params,
+            cart=cart_for_context,
+            pending_cart_edits=pending_cart_edits,
         )
         
         # Memoria: ultimi 10 messaggi per contesto (max 5 turni)
@@ -206,13 +220,19 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             history=history
         )
         
-        intent = getattr(search_params, "intent", None)
-        # Override: se l'utente ha chiesto una categoria/consiglio (ADVICE) o una scelta tra molti prodotti,
-        # non aggiungere al carrello finché non conferma. Il modello spesso restituisce comunque product_items;
-        # forziamo proposta per coerenza con i criteri.
+        # Override: solo l'intent CONFIRMATION può aggiungere al carrello. SPECIFIC e ADVICE = sempre proposta.
+        # ("il solito" è gestito in precedenza con early return.)
         if intent == "ADVICE":
             if decision.product_items or decision.product_codes or decision.order_confirmed:
                 logger.info("Intent ADVICE: forzati order_confirmed=False e product_items=[] (solo proposta)")
+            raw_items = []
+            order_confirmed = False
+        elif intent == "SPECIFIC":
+            if decision.product_items or decision.product_codes or decision.order_confirmed:
+                logger.info("Intent SPECIFIC: forzati order_confirmed=False e product_items=[] (solo proposta; aggiunta solo su CONFIRMATION)")
+            raw_items = []
+            order_confirmed = False
+        elif intent == "EDIT":
             raw_items = []
             order_confirmed = False
         else:
@@ -234,18 +254,34 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
         # Solo prodotti effettivamente passati all'IA (disponibili per il cliente) possono essere restituiti
         allowed_cod_art = {p.cod_art for p in products}
         filtered_items = [it for it in raw_items if it.cod_art in allowed_cod_art]
+        dropped = [it.cod_art for it in raw_items if it.cod_art not in allowed_cod_art]
+        if dropped:
+            logger.warning(
+                "Alcuni product_items rimossi perché cod_art non in lista prodotti passata all'IA: %s. "
+                "Possibile causa: ricerca prodotti per questo messaggio non include tutti i tipi richiesti (es. acqua+bibita). "
+                "raw_items=%s, allowed_cod_art (primi 20)=%s",
+                dropped, [(it.cod_art, it.quantity) for it in raw_items], list(allowed_cod_art)[:20],
+            )
         if raw_items and not filtered_items:
             logger.warning(f"IA ha restituito cod_art non in lista disponibili, filtrati a []")
         order_confirmed = order_confirmed and len(filtered_items) > 0
         product_codes = [it.cod_art for it in filtered_items]
 
-        logger.info(f"Risposta generata: message='{decision.message}', product_items={[(it.cod_art, it.quantity) for it in filtered_items]}, order_confirmed={order_confirmed}")
+        # Serializza cart_edits per la risposta (solo per intent EDIT)
+        cart_edits_out = None
+        if getattr(decision, "cart_edits", None):
+            cart_edits_out = [e.model_dump() if hasattr(e, "model_dump") else e for e in decision.cart_edits]
+        edit_confirmed_out = getattr(decision, "edit_confirmed", False)
+
+        logger.info(f"Risposta generata: message='{decision.message}', product_items={[(it.cod_art, it.quantity) for it in filtered_items]}, order_confirmed={order_confirmed}, cart_edits={cart_edits_out}, edit_confirmed={edit_confirmed_out}")
 
         return ChatResponse(
             message=decision.message,
             product_codes=product_codes,
             product_items=filtered_items,
-            order_confirmed=order_confirmed
+            order_confirmed=order_confirmed,
+            cart_edits=cart_edits_out,
+            edit_confirmed=edit_confirmed_out,
         )
         
     except ValueError as e:

@@ -71,7 +71,15 @@ export async function POST(request: Request) {
       );
     } 
     else if (action === 'remove') {
+      if (!id) return NextResponse.json({ success: false, error: 'ID riga mancante' }, { status: 400 });
       await db.execute('DELETE FROM preordclidet WHERE id = ?', [id]);
+    }
+    else if (action === 'update_quantity') {
+      const qtaNum = qta != null ? Number(qta) : null;
+      if (id == null || qtaNum == null || qtaNum < 0.001) {
+        return NextResponse.json({ success: false, error: 'id e qta obbligatori (qta > 0)' }, { status: 400 });
+      }
+      await db.execute('UPDATE preordclidet SET qta_ordinata = ? WHERE id = ?', [qtaNum, id]);
     }
 
     return NextResponse.json({ success: true });

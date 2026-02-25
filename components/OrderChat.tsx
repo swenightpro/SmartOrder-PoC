@@ -27,10 +27,13 @@ interface OrderChatProps {
   refreshCart?: () => void;
 }
 
+type CartEditItem = { cart_item_id: number; action: 'remove' | 'set_quantity'; new_quantity?: number };
+
 export default function OrderChat({ selectedClient, messages, setMessages, refreshCart }: OrderChatProps) {
   const [input, setInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingCartEdits, setPendingCartEdits] = useState<CartEditItem[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -153,12 +156,58 @@ export default function OrderChat({ selectedClient, messages, setMessages, refre
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, clientId: selectedClient.cod_cli, history }),
+        body: JSON.stringify({
+          message: userMessage,
+          clientId: selectedClient.cod_cli,
+          history,
+          pending_cart_edits: pendingCartEdits?.length ? pendingCartEdits : undefined,
+        }),
       });
       const data = await response.json();
       if (data.success) {
         const assistantMsg: Message = { id: Date.now().toString(), role: 'assistant', content: data.response };
         setMessages(prev => [...prev, assistantMsg]);
+
+        // Modifiche carrello (edit): in attesa di conferma → salva; confermate → applica
+        const cartEdits = Array.isArray(data.cart_edits) ? data.cart_edits : [];
+        if (cartEdits.length > 0 && !data.edit_confirmed) {
+          setPendingCartEdits(cartEdits as CartEditItem[]);
+        } else if (cartEdits.length > 0 && data.edit_confirmed) {
+          setPendingCartEdits(null);
+          try {
+            const failed: string[] = [];
+            for (const edit of cartEdits as CartEditItem[]) {
+              if (edit.action === 'remove') {
+                const res = await fetch('/api/cart', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'remove', id: edit.cart_item_id }),
+                });
+                if (!res.ok) failed.push(String(edit.cart_item_id));
+              } else if (edit.action === 'set_quantity' && edit.new_quantity != null) {
+                const res = await fetch('/api/cart', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'update_quantity', id: edit.cart_item_id, qta: edit.new_quantity }),
+                });
+                if (!res.ok) failed.push(String(edit.cart_item_id));
+              }
+            }
+            refreshCart?.();
+            if (failed.length > 0) {
+              setMessages(prev => [...prev, {
+                id: (Date.now() + 2).toString(),
+                role: 'assistant',
+                content: 'Alcune modifiche al carrello non sono state applicate. Riprova.',
+              }]);
+            }
+          } catch {
+            setMessages(prev => [...prev, { id: (Date.now() + 2).toString(), role: 'assistant', content: 'Non sono riuscito ad aggiornare il carrello. Riprova tra poco.' }]);
+          }
+        } else if (data.edit_confirmed && pendingCartEdits?.length) {
+          setPendingCartEdits(null);
+        }
+
         const productItems = Array.isArray(data.product_items) && data.product_items.length > 0
           ? data.product_items.map((it: { cod_art: string; quantity?: number }) => ({ cod_art: it.cod_art, qta: Number(it.quantity) || 1 }))
           : (data.product_codes || []).map((cod_art: string) => ({ cod_art, qta: 1 }));

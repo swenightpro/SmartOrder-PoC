@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="Messaggio dell'utente")
     client_id: int = Field(..., alias="client_id", description="ID cliente")
     history: Optional[List[ChatMessage]] = Field(default=None, description="Ultimi messaggi della conversazione (max 10, per memoria IA)")
+    pending_cart_edits: Optional[List[dict]] = Field(default=None, description="Modifiche carrello proposte in precedenza, in attesa di conferma utente (solo per intent CONFIRMATION)")
 
 
 class ProductItem(BaseModel):
@@ -26,6 +27,8 @@ class ChatResponse(BaseModel):
     product_codes: List[str] = Field(default_factory=list, description="Codici prodotti trovati (deprecato: usare product_items)")
     product_items: List[ProductItem] = Field(default_factory=list, description="Prodotti con quantità (cod_art + quantity)")
     order_confirmed: bool = Field(default=False, description="True se l'ordine è confermato e non richiede verifica aggiuntiva")
+    cart_edits: Optional[List[dict]] = Field(default=None, description="Modifiche al carrello da applicare (remove / set_quantity); presente quando intent=EDIT")
+    edit_confirmed: bool = Field(default=False, description="True se l'utente ha confermato le modifiche al carrello e vanno applicate")
     
     def dict(self, **kwargs):
         data = super().dict(**kwargs)
@@ -39,10 +42,25 @@ class ChatResponse(BaseModel):
         return data
 
 
+class CartItem(BaseModel):
+    """Elemento del carrello corrente (per intent EDIT)."""
+    id: int = Field(..., description="ID riga in preordclidet")
+    cod_art: str = Field(..., description="Codice articolo")
+    qta_ordinata: float = Field(..., description="Quantità in carrello")
+    des_art: Optional[str] = Field(None, description="Descrizione articolo")
+
+
+class CartEdit(BaseModel):
+    """Modifica da applicare al carrello: rimozione o cambio quantità."""
+    cart_item_id: int = Field(..., description="ID della riga in preordclidet da modificare")
+    action: Literal["remove", "set_quantity"] = Field(..., description="remove=togli dal carrello, set_quantity=aggiorna quantità")
+    new_quantity: Optional[float] = Field(None, ge=0.001, description="Nuova quantità (obbligatoria se action=set_quantity)")
+
+
 class ProductSearchParams(BaseModel):
-    intent: Literal["SPECIFIC", "ADVICE", "REORDER", "CONFIRMATION"] = Field(
+    intent: Literal["SPECIFIC", "ADVICE", "REORDER", "CONFIRMATION", "EDIT"] = Field(
         default="SPECIFIC",
-        description="SPECIFIC=cerca prodotto preciso, ADVICE=consiglio/categoria (es. aperitivo), REORDER=riordino, CONFIRMATION=conferma proposta"
+        description="SPECIFIC=cerca prodotto preciso, ADVICE=consiglio/categoria, REORDER=riordino, CONFIRMATION=conferma proposta, EDIT=modifica carrello (togliere articoli, cambiare quantità)"
     )
     keywords: List[str] = Field(default_factory=list, description="Parole chiave per ricerca")
     expanded_categories: List[str] = Field(
@@ -90,10 +108,14 @@ class SearchContext(BaseModel):
     products: List[Product] = Field(default_factory=list)
     order_history: List[OrderHistoryItem] = Field(default_factory=list)
     search_params: ProductSearchParams
+    cart: Optional[List[CartItem]] = Field(default=None, description="Carrello corrente (per intent EDIT)")
+    pending_cart_edits: Optional[List[dict]] = Field(default=None, description="Modifiche carrello già proposte dall'assistente, in attesa di conferma utente; se l'utente conferma, restituire queste con edit_confirmed=True")
 
 
 class BusinessDecisionResponse(BaseModel):
     message: str = Field(..., description="Messaggio di risposta all'utente")
     product_codes: List[str] = Field(default_factory=list, description="Lista di codici articolo (cod_art) dei prodotti trovati/ordinati (deprecato: usare product_items)")
-    product_items: List[ProductItem] = Field(default_factory=list, description="Lista di prodotti da aggiungere: ogni elemento ha cod_art (da elenco disponibili) e quantity. Un elemento per prodotto (es. 2 acque e 1 bibita = 2 elementi in lista). Vuota se proposta senza aggiunta.")
+    product_items: List[ProductItem] = Field(default_factory=list, description="Lista di prodotti da aggiungere: ogni elemento ha cod_art (da elenco disponibili) e quantity. Vuota se proposta senza aggiunta o se intent=EDIT.")
     order_confirmed: bool = Field(default=False, description="True se l'ordine è confermato e non richiede verifica aggiuntiva, False se serve conferma dell'utente")
+    cart_edits: Optional[List[CartEdit]] = Field(default=None, description="Modifiche al carrello (solo per intent EDIT): remove o set_quantity con cart_item_id e eventuale new_quantity")
+    edit_confirmed: bool = Field(default=False, description="True se le modifiche al carrello vanno applicate subito (es. solo cambio quantità); False se serve conferma utente (es. rimozioni)")
