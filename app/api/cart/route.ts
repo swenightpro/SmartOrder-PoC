@@ -29,21 +29,20 @@ export async function GET(request: Request) {
 }
 
 /** Verifica se il prodotto è disponibile per il cliente (assortimento + stato). */
-async function isProductAvailableForClient(cod_cli: number, cod_art: string): Promise<boolean> {
-  try {
-    const [rows] = await db.execute(
-      `SELECT 1 FROM anaart a
-       WHERE a.cod_art = ?
-         AND (a.stato IS NULL OR a.stato NOT IN ('ARTICOLO SOSPESO', 'SU AUTORIZZAZIONE', 'DISPONIBILE DAL'))
-         AND (NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ?)
-              OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ? AND cod_art = a.cod_art))
-       LIMIT 1`,
-      [cod_art, cod_cli, cod_cli]
-    );
-    return Array.isArray(rows) && rows.length > 0;
-  } catch {
-    return false;
-  }
+async function isProductAvailableForClient(cod_cli: number, cod_art: string): Promise<{ available: boolean; error?: string }> {
+  const [rows] = await db.execute(
+    `SELECT 1 FROM anaart a
+     WHERE a.cod_art = ?
+       AND (a.stato IS NULL OR a.stato NOT IN ('ARTICOLO SOSPESO', 'SU AUTORIZZAZIONE', 'DISPONIBILE DAL'))
+       AND (
+         NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ?)
+         OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ? AND cod_art = a.cod_art)
+       )
+     LIMIT 1`,
+    [cod_art, cod_cli, cod_cli]
+  );
+  const available = Array.isArray(rows) && rows.length > 0;
+  return { available, error: available ? undefined : 'Prodotto non disponibile o non presente nell\'assortimento cliente' };
 }
 
 export async function POST(request: Request) {
@@ -56,10 +55,10 @@ export async function POST(request: Request) {
       if (!cod_art) {
         return NextResponse.json({ success: false, error: 'Codice articolo mancante' }, { status: 400 });
       }
-      const available = await isProductAvailableForClient(cod_cli_num, cod_art);
+      const { available, error: availError } = await isProductAvailableForClient(cod_cli_num, cod_art);
       if (!available) {
         return NextResponse.json(
-          { success: false, error: 'Prodotto non disponibile per il cliente' },
+          { success: false, error: availError || 'Prodotto non disponibile per il cliente' },
           { status: 400 }
         );
       }

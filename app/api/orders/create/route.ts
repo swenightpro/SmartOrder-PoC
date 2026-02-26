@@ -37,8 +37,8 @@ export async function POST(request: Request) {
 
       // C. Controllo Assortimento Cliente
       const [assortmentCheck]: any = await db.execute(
-        `SELECT 1 FROM DUAL WHERE 
-         NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ?) 
+        `SELECT 1 WHERE
+         NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ?)
          OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ? AND cod_art = ?)`,
         [cod_cli, cod_cli, item.cod_art]
       );
