@@ -85,31 +85,54 @@ export default function OrderCanvas({ currentClient, onClose, onOrderSuccess, is
   };
 
   const addToCart = async () => {
-    if (!selectedProduct || isBlocked || !currentClient?.cod_cli || qty === '' || qty === 0) return;
-    setError('');
-    try {
-      const res = await fetch('/api/cart', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'add',
-          cod_cli: currentClient.cod_cli,
-          cod_art: selectedProduct.cod_art,
-          qta: typeof qty === 'number' ? qty : 1
-        })
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Errore aggiunta articolo");
-      }
-      refreshCart();
-      setSelectedProduct(null);
-      setSearchTerm('');
-      setQty(1);
-    } catch (e: any) {
-      setError(e.message);
+  if (!currentClient?.cod_cli) {
+    setError("Errore: Nessun cliente selezionato.");
+    return;
+  }
+  if (!selectedProduct) {
+    setError("Errore: Seleziona prima un articolo dalla ricerca.");
+    return;
+  }
+  if (isBlocked) {
+    setError(`Articolo bloccato: ${selectedProduct.stato}`);
+    return;
+  }
+
+  const finalQty = typeof qty === 'number' ? qty : parseInt(qty || '0');
+  if (finalQty <= 0) {
+    setError("Inserisci una quantità maggiore di zero.");
+    return;
+  }
+
+  setError(''); /
+  
+  try {
+    const res = await fetch('/api/cart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'add',
+        cod_cli: currentClient.cod_cli,
+        cod_art: selectedProduct.cod_art,
+        qta: finalQty
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Errore durante l'aggiunta al carrello");
     }
-  };
+
+    refreshCart(); 
+    setSelectedProduct(null);
+    setSearchTerm('');
+    setQty(1);
+  } catch (e: any) {
+    console.error("Errore aggiunta manuale:", e);
+    setError(e.message);
+  }
+};
 
   const removeFromCart = async (id: number) => {
     try {
