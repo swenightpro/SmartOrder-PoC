@@ -14,19 +14,21 @@ export async function GET(request: Request) {
         cod_art, des_art, des_um, pezzi_conf, des_tipo_um, stato, 
         linea, famiglia
       FROM anaart 
-      WHERE (des_art LIKE ? OR cod_art LIKE ?)
+      WHERE (des_art ILIKE $1 OR cod_art ILIKE $2)
       AND (
-        NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ?) 
-        OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = ? AND cod_art = anaart.cod_art)
+        NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = $3) 
+        OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = $4 AND cod_art = anaart.cod_art)
       )
       LIMIT 20
     `;
-    const params = [`%${q}%`, `${q}%`, cod_cli, cod_cli];
+    
+    const searchTerm = `%${q}%`;
+    const params = [searchTerm, searchTerm, parseInt(cod_cli), parseInt(cod_cli)];
 
     const [rows] = await db.execute(query, params);
-
     return NextResponse.json(rows);
   } catch (error: any) {
+    console.error("Errore ricerca prodotti:", error); 
     return NextResponse.json({ error: 'Errore ricerca prodotti' }, { status: 500 });
   }
 }
